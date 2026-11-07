@@ -7,9 +7,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 BRIDGE="${MGBA_BRIDGE:-/Users/cparent/tools/mcp-mgba/lua/bridge-8777.lua}"
 QTINI="$HOME/.config/mgba/qt.ini"
 
-ROM="${1:-}"
+# The reference ROM is supplied locally and is never committed. Its file name is
+# deliberately not hard-coded here: point at it with $1 or $REFERENCE_ROM, or drop
+# any .gba file into rom/.
+ROM="${1:-${REFERENCE_ROM:-}}"
 if [[ -z "$ROM" ]]; then
-  ROM="$(find "$HERE/.." -maxdepth 3 -name 'Tetris Worlds*.gba' 2>/dev/null | head -1 || true)"
+  ROM="$(find "$HERE/../rom" -maxdepth 1 -name '*.gba' 2>/dev/null | head -1 || true)"
 fi
 if [[ -z "$ROM" || ! -f "$ROM" ]]; then
   echo "ROM not found. Pass the path: $0 /path/to/rom.gba" >&2
