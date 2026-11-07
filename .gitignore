@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+*.log
+.DS_Store
+.env
+*.local
+.trae/
+# never ship the reference ROM or its saves; keep them out of git
+rom/
+docs/reverse-engineering/states/
