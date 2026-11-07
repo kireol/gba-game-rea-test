@@ -26,3 +26,4 @@ venv/
 coverage/
 *.log
 tmp/
+rom/
