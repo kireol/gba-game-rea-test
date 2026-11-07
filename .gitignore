@@ -11,3 +11,10 @@ coverage/
 # never ship the reference ROM or its saves; keep them out of git
 rom/
 docs/reverse-engineering/states/
+
+# reference screenshots stay local: they contain the reference game title/wordmarks
+docs/reverse-engineering/screenshots/
+
+# python bytecode from the RE helper scripts
+__pycache__/
+*.pyc

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Orbit Drop - an original falling-block puzzle game for the browser." />
+    <title>Orbit Drop</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --shell-bg: #05060c;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--shell-bg);
+        overflow: hidden;
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+      }
+      #screen {
+        display: block;
+        image-rendering: pixelated;
+        background: #05060c;
+        touch-action: manipulation;
+      }
+      #screen:focus-visible {
+        outline: 2px solid #8fd7ff;
+        outline-offset: 2px;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+      #boot-error {
+        position: fixed;
+        inset: auto 1rem 1rem 1rem;
+        color: #ffd9d9;
+        background: #2b0d12;
+        border: 1px solid #ff7a7a;
+        padding: 0.75rem 1rem;
+        font-size: 12px;
+        display: none;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Orbit Drop game screen"></canvas>
+    </div>
+    <p class="sr-only" id="announce" aria-live="polite"></p>
+    <pre id="boot-error"></pre>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>
