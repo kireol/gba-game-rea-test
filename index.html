@@ -32,7 +32,10 @@
         display: block;
         image-rendering: pixelated;
         background: #05060c;
-        touch-action: manipulation;
+        /* A touch drag on the board must steer the game, not scroll or zoom the page. */
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
       }
       #screen:focus-visible {
         outline: 2px solid #8fd7ff;
@@ -63,7 +66,13 @@
   </head>
   <body>
     <div id="stage">
-      <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Orbit Drop game screen"></canvas>
+      <canvas
+        id="screen"
+        width="240"
+        height="160"
+        tabindex="0"
+        aria-label="Orbit Drop game screen"
+      ></canvas>
     </div>
     <p class="sr-only" id="announce" aria-live="polite"></p>
     <pre id="boot-error"></pre>

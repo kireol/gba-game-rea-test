@@ -109,6 +109,12 @@ const ACKNOWLEDGED = new Map([
     "docs/reverse-engineering/rom-overview.md",
     "file extension used to identify the analysed image for reproducibility",
   ],
+  [
+    "tests/e2e/playable.spec.ts",
+    "the browser branding regression test has to name the strings it forbids; " +
+      "the deny-list is the enforcement, never shipped and never rendered. " +
+      "Review the acknowledged lines below on every run.",
+  ],
 ]);
 
 const walk = (dir, out = []) => {

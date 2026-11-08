@@ -71,8 +71,9 @@ everything else, including the deliverable list.
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
   `$1` / `$REFERENCE_ROM` / first `rom/*.gba`).
 * Docs batch (`docs/architecture/*`, `docs/game-design.md`,
-  `docs/asset-provenance.md`) — written; `decisions.md`, `asset-provenance.md`
-  and `game-design.md` are still **untracked**, `PROJECT_STATE.md` modified.
+  `docs/asset-provenance.md`) — written and committed (corrected 2026-11-08: an
+  earlier note here called three of them untracked; `git ls-files docs` says all
+  fifteen docs are tracked). Their *contents* still need the pass listed in § 4.
 * `scripts/forbidden-name-sweep.mjs` → `npm run report`: **PASS**. It now excludes
   itself from the scan (its rule table contains every forbidden string, which is a
   self-reference, not a hit) after a first run failed on 5 hits, 2 of them genuine
@@ -199,6 +200,76 @@ everything else, including the deliverable list.
   vitest, so an anchored `^FAIL` regex matched nothing and a green campaign proved
   nothing about *which* file caught a mutant. Lesson: record the attribution per
   mutant, and treat the "did our file catch it" boolean as part of the evidence.
+* **Presentation + app layer written, and the whole project now builds and plays in
+  a real browser.** Files: `src/render/{palette,font5x7,blocks,frame,renderer}.ts`,
+  `src/audio/engine.ts`, `src/ui/{format,options,widgets,scenes}.ts`,
+  `src/app/{layout,loop,input,main}.ts`, `vite.config.ts`, `playwright.config.ts`,
+  `index.html` (mounts `#screen` at 240×160 with a `#boot-error` fallback).
+  Verified 2026-11-08: `npm run build` → **BUILD_EXIT=0**, 35 modules,
+  `dist/assets/index-*.js` 68.49 kB (gzip 24.62 kB); `npx vitest run` →
+  **248 passed / 248** across 15 files; `npm run test:e2e` → **7 passed (24.0 s)**;
+  `npm run report` → **PASS**, 86 files scanned (one acknowledged exception, § 6).
+  The rules layer still imports no DOM/Canvas/WebAudio — the separation the brief
+  demands holds with the UI on top of it.
+* `src/tests/layout.test.ts` (13 tests, `// @vitest-environment jsdom`) pins
+  `computeScale` / `cssSize` / `createLayout`: largest whole factor fitting both
+  axes; flooring instead of rounding up (1199×1600 → 4, because 1199/240 = 4.996
+  and rounding would stretch the board; 1440×160 → 1 because the height binds);
+  never below 1; a broken measurement → 1; custom frame sizes; the canvas CSS box
+  written on creation; `onChange` fired once per real change and not on a no-op
+  refresh; a `window resize` re-scaling with `dispose()` detaching the listeners;
+  `toFramebuffer` mapping through the CSS box including the half-open far edge and
+  a zero-size box → `null`; fullscreen staying usable windowed when jsdom implements
+  neither `requestFullscreen` nor its webkit alias.
+  Its first run **failed one assertion**: I expected `computeScale(1440, 160)` to be
+  6; it is 1 — `min(1440/240, 160/160) = 1`, the height constrains it. The code was
+  right and the expectation was wrong, so the test was fixed, not the code.
+* `tests/e2e/playable.spec.ts` (7 tests, real Chromium) proves the brief's browser
+  requirements rather than the rules: boots on the title screen painting a
+  multi-colour 240×160 backing store with zero console/page errors and `#boot-error`
+  removed; integer scaling with a correct aspect across four viewports (960×640,
+  500×400, 1600×1200, 420×900), asserting `scale` integral and the CSS box exactly
+  `240·scale × 160·scale`; keyboard play title → modes → rules → play with
+  `status: 'playing'`, `modeId: 'goal-ladder'`, no pieces during the countdown, a
+  piece that falls and locks, hard drop raising `pieces`, pause and unpause;
+  mouse-only play (no keyboard at all) reaching a live run; wheel and right-click
+  turning the piece while `window.scrollY` stays 0; player-facing text free of
+  reference branding; a hidden tab pausing a live run. Per-test times: 284 ms boot,
+  317 ms scaling, 640 ms mouse, 481 ms branding, 4.5 s wheel/right-click, 4.3 s
+  hidden tab, 20.4 s keyboard play (that one waits on real-time gravity).
+  The suite reads the live scene machine through `?test=1`, which is the only thing
+  that publishes `window.__orbit` (`scenes`, `store`, `layout`, `loop`, `renderer`,
+  `audio`, `input`, `get status`); assertions ride the frame model, not screenshots,
+  so a palette tweak cannot make them flaky while an unpainted playfield still fails.
+* **The e2e suite caught two of its own bugs, and neither was guessed at.**
+  (1) "flat canvas" failed at `expected > 1, received 1`: `go('title')` finishes
+  inside `createScenes`, but the first paint happens on the next
+  `requestAnimationFrame`, and an untouched backing store is one flat colour — the
+  assertion now polls. (2) The mouse test expected title→modes→rules from two
+  clicks and received `play`: a press activates the row *under the pointer*, and
+  pointer entry already moved the cursor, so a single click can enter a mode that
+  starts immediately; the test now accepts `/^(rules|play)$/` and clicks through
+  whichever it landed on. Both were test bugs — `renderer.ts`, `palette.ts` and the
+  pointer/geometry path were read first to rule out a product bug, then a throwaway
+  probe measured the truth instead of my reasoning about it.
+* Two facts that invalidate earlier notes in this file: the player-facing mode
+  labels are **ASCENT / FUSION / RUSH / DASH / BLITZ / ENDLESS / DUEL**
+  (`goal-ladder` is only the internal id, visible via `debug().modeId`), and the
+  title screen has **three** rows — PLAY, HIGH SCORES, OPTIONS. Rows 1–5 carry a
+  `LOCKED` label on a first launch, DUEL does not.
+* `npm run report` initially **FAILED with 3 blocking hits**, all on the new e2e
+  file: the branding regression test has to name the strings it forbids. Resolved
+  through the sweep's own `ACKNOWLEDGED` mechanism (precedent: `start-mgba.sh`,
+  `rom-overview.md`), reason printed on every run. The gate was then self-checked
+  rather than trusted: planted a probe string carrying the reference title, the
+  mark's name and the reference platform's name in `src/tmp-gate-probe.ts`
+  → `PLANTED_EXIT=1`, naming the probe 3 times; deleted → `CLEAN_EXIT=0`, no mention
+  of it. The gate still bites. Limitation to close later: `ACKNOWLEDGED` is keyed by
+  path, so it exempts that whole file from every rule — narrowing it to per-rule
+  exceptions (or feeding the browser test the scanner's own table) is a real task.
+* Git: nothing was committed while the presentation layer was being written; the
+  last commit before this save is `35f4be1` ("test: pin the save layer against
+  hostile payloads and a hostile browser").
 
 ## 4. In progress
 
@@ -391,13 +462,55 @@ everything else, including the deliverable list.
   (`board.test.ts > placing > writes the piece colour and reports cells left above
   the field`); the session arm stays as defensive depth rather than a test that
   has to fake an impossible board.
-* Then: `src/ui` (scenes + options + bindings screens), `src/render` (palette,
-  procedural blocks, 5×7 font, renderer), `src/audio`, `src/app` (main, loop,
-  input, layout), `vite.config.ts`, `playwright.config.ts`.
-  `src/app/main.ts` (referenced by `index.html`) and both configs do **not exist
-  yet**; the project does not build yet.
-* Commit groups: engine+gameplay+modes → tests → render/audio/app → configs →
-  e2e → README/TODO/CHANGELOG.
+* **Presentation layer: written and browser-verified, but almost entirely
+  un-unit-tested.** Nothing in `src/app`, `src/ui`, `src/render`, `src/audio` has a
+  Vitest file except `src/tests/layout.test.ts`. The e2e suite exercises them
+  together, which is not the same as pinning them. Next, in this order:
+  1. `src/app/loop.ts` — fixed-step accumulator, `maxCatchUp` dropping work instead
+     of spiralling, injected clock + injected scheduler (no `requestAnimationFrame`
+     in the test).
+  2. `src/app/input.ts` — `SWALLOWED` key set, `event.repeat` dropped, P1/P2
+     dispatch, right/middle button and wheel mapping with its deadzone, blur and
+     visibility handling, `preventDefault` not eating the page.
+  3. `src/ui/scenes.ts` navigation through a stub `SceneHost` — the biggest
+     untested surface and the one the brief cares about: title's 3 rows →
+     modes/scores/options, a locked mode refusing with `rotate-fail` + `LOCKED`
+     banner instead of navigating, `startRun` seeding from `lastSeed` vs
+     `randomSeed`, countdown withholding frames, options cycling feeding
+     `configFor`, the bindings capture/rebind/unbind flow, reset-progress needing
+     confirmation, the duel pause list.
+  4. `src/ui/widgets.ts` (`rowUnderPoint`, `menuRects`, `addField`),
+     `src/ui/options.ts`, `src/ui/format.ts` (`mmss`, score padding).
+  5. `src/engine/bindings.ts` (`normalizeBindings`, `rebind`, `unbind`,
+     `conflictsIn`, `intentForCode`, P2 variants) — still owed from § 5 item 2.
+  6. `src/gameplay/assets.ts` — **does not exist yet**; the brief's asset-safety
+     requirement has no module of its own.
+  7. Then a mutation campaign over the new layer, same discipline as § 3 (per-mutant
+     attribution, restore-by-copy with a byte compare, no foreground test while the
+     driver runs).
+* Facts a resuming session needs about the pointer model, since the e2e tests now
+  depend on it: `scenes.pointer(x, y, action)` with `'hover'` moving the menu cursor
+  (playing `sfx('menu-move')`) and `'press'` calling `activate(rowUnderPoint(...))` —
+  **a press activates the row under the pointer, not the row the cursor was on when
+  the pointer arrived**. Geometries: modes `listGeom(count, 26, 13, 8, PANEL.w)`,
+  rules `listGeom(count, 120, 14, 8, 110)` plus a seed-nudge rect
+  `{x:150,y:120,w:74,h:22}` → `nudgeSeed(x < 168 ? -1 : 1)`, confirm
+  `listGeom(count, 90, 14, 40, SCREEN.w-80)`, results `listGeom(count, 122, 15, 62, 116)`,
+  everything else `listGeom(count, 62, 16, 62, 116)`; the options slider band is
+  `barX = geom.x + geom.w - 74` with ratio `(x-barX)/42`, and left/right of the row
+  centre steps the value.
+* `Scenes.debug(): SceneDebug { scene, status: GameStatus | null, seed, countdown,
+  modeId, lines, score, level, pieces }` — `status` is the live session status and is
+  **null outside play/duel**. Verified.
+* Still owed from earlier groups: `docs/asset-provenance.md` lists a `pause` sfx that
+  `SfxName` does not have, and `docs/architecture/interfaces.md` still shows
+  pre-implementation signatures (`events()` as a property, `pushRow(cell, COUNT)`
+  argument order, `clearScore` shape, `ghost: number | null`, T spawning nub-down),
+  and does not yet document the frame model's `fields` array, `debug()`/`SceneDebug`,
+  the app layer, the pointer rule above, or the list geometries. `docs/architecture/`
+  must also drop any claim about a nonexistent `src/tests/render.test.ts`.
+* Commit groups: engine+gameplay+modes → tests → **render/audio/app/ui + configs +
+  index.html + e2e + layout tests (this one)** → README/TODO/CHANGELOG + docs pass.
 
 
 ## 5. Outstanding tasks
@@ -421,14 +534,33 @@ everything else, including the deliverable list.
    and tested**; the module contract and every mode-specific rule are pinned, and
    the suite was mutation-checked as described in § 3.
 4. UI: scene/menus state machine with mouse hit-testing, options, bindings
-   editor, rules screens, results, pause.
+   editor, rules screens, results, pause. **Written, and driven end to end by the
+   browser suite; no unit tests of its own yet** — see § 4 items 3–4.
 5. Render (own 5×7 pixel font, procedural art), audio (WebAudio synth, original
-   material), fullscreen + responsive scaling with correct aspect.
+   material), fullscreen + responsive scaling with correct aspect. **Written and
+   browser-verified for scaling** (`layout.test.ts` 13 tests + the e2e viewport
+   test). `toggleFullscreen` is only proven not to throw where the API is missing;
+   a real fullscreen transition is untested. Font/art/audio have no tests.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
-   tests (`npx playwright install chromium` first).
+   tests. **Rules layer: 248 tests across 15 files, all green. Browser: 7 Playwright
+   tests green** on "Chrome Headless Shell 158.0.8127.18" (already installed, no
+   `playwright install` needed). Still open inside this item: the presentation-layer
+   unit tests in § 4, `bindings` tests, `src/gameplay/assets.ts`, and a Playwright
+   assertion for the real `localStorage` round-trip (the persistence suite covers
+   that with a double only, so item 2's browser-storage caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
-   `npm run test:e2e`, `npm run report` and report results verbatim.
-8. `README.md`, `TODO.md`, `CHANGELOG.md`, milestone report.
+   `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
+   green on 2026-11-08**: build/typecheck `BUILD_EXIT=0` (35 modules); vitest
+   `248 passed (248)`; Playwright `7 passed (24.0s)`; sweep `PASS — no blocking
+   hits`, 86 files, 3 acknowledged. Re-run all five after any change — `build` runs
+   `typecheck` first, and `test:e2e`'s webServer runs `build`, so one type error
+   anywhere under `src/` or `tests/` breaks the browser suite too.
+8. `README.md`, `TODO.md`, `CHANGELOG.md`, milestone report (§ 14 of the brief:
+   completed / reverse-engineered / remaining / discrepancies / test results / next
+   steps). **Not written.** Unblocked since the build and the browser suite went
+   green — this is the highest-value remaining deliverable.
+9. Docs pass over `docs/architecture/` and `docs/asset-provenance.md` (details in
+   § 4). Every doc is already tracked, so this is an edit pass, not an add.
 
 ## 6. Known issues & blockers
 
@@ -475,6 +607,33 @@ everything else, including the deliverable list.
   the `goal-ladder.ts` copy shown on 2026-11-07 described a `goal()` shape the
   real file does not have, which sent one test design wrong. Read the file, or
   let the test run decide, before reasoning from an embedded copy.
+* **Toolchain traps that cost time, so nothing re-learns them:**
+  * `npm run test:e2e` fails as `Error: Process from config.webServer was not able
+    to start. Exit code: 2` when *anything* under `src/` or `tests/` fails to
+    typecheck — the webServer command is `npm run build`, which is
+    `npm run typecheck && vite build`, and `tsconfig.include` covers `src`, `tests`
+    and the three config files, **unit tests included**. Diagnose with a direct
+    `npm run build`, never by reading the Playwright error.
+  * No `@types/node` on purpose (it would retype the global timers the browser code
+    uses), so any `process` reference in a typechecked config file is TS2591.
+    `playwright.config.ts` uses Playwright's own CI detection instead.
+  * The `as const` trap: `FRAME = { w, h } as const` leaks the literal `240`/`160`
+    into an *inferred default-parameter* type, so a caller passing general numbers
+    gets TS2345/TS2322. Declare an explicit general `type Rect` and a
+    `const FULL: Rect` (this is what `layout.test.ts` does).
+  * `vitest.config.ts` has `environment: 'node'` and `globals: false`, so every
+    test file needs `import { describe, expect, it } from 'vitest';` and a DOM file
+    needs a `// @vitest-environment jsdom` docblock. jsdom 26 is installed.
+  * An untouched canvas backing store is **one flat colour**, and the first paint
+    lands on the next `requestAnimationFrame`. Any "did it render" assertion must
+    poll.
+  * Never pipe a check through `head` — it hides the exit code. Use
+    `cmd > /tmp/x.txt 2>&1; echo "EXIT=$?"` and read the echoed line.
+  * A scratch script that imports `@playwright/test` must live **inside the project
+    tree** or module resolution fails with `ERR_MODULE_NOT_FOUND`.
+  * mGBA/Ghidra/Gearboy: `gearboy` and `mgba` MCP servers are configured; the
+    reference ROM path must never appear in project-authored text (`.gba` outside
+    the two acknowledged paths is a sweep hit).
 
 ## 7. Important files
 
@@ -488,4 +647,11 @@ everything else, including the deliverable list.
 | `docs/asset-provenance.md` | every asset's origin (all in-repo/procedural) |
 | `tools/re/` | the analysis harness (mGBA Lua bridge + vision classifier) |
 | `scripts/{start-mgba,load-bridge}.sh` | launch mGBA with the bridge on 127.0.0.1:8777 |
-| `scripts/forbidden-name-sweep.mjs` | licence gate, `npm run report`; run before any milestone claim |
+| `scripts/forbidden-name-sweep.mjs` | licence gate, `npm run report`; run before any milestone claim. `ACKNOWLEDGED` is keyed by path — check the printed exceptions every run |
+| `src/ui/scenes.ts` | every screen, the menu cursor, `pointer()`, `activate()`, and `debug()` — the largest file and the least tested |
+| `src/app/main.ts` | composition root; publishes `window.__orbit` only when the URL has `?test=1` |
+| `src/app/layout.ts` | the only place window size touches the game; `computeScale`, `toFramebuffer` |
+| `src/render/frame.ts` | the frame model the renderer draws and the e2e tests assert against |
+| `tests/e2e/playable.spec.ts` | the 7 browser tests; reads the app through `?test=1`, never screenshots |
+| `src/tests/layout.test.ts` | jsdom docblock example + the only presentation-layer unit tests |
+| `vite.config.ts` / `playwright.config.ts` | build (240×160 canvas app) / `webServer: npm run build` — hence the typecheck coupling |
