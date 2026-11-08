@@ -9,7 +9,7 @@
 | `npm run build` | `npm run typecheck` then `vite build` → `dist/` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` (strict; `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) |
-| `npm test` | Vitest — 50 unit files / 339 tests (node environment by default) |
+| `npm test` | Vitest — 17 unit files / 282 tests (node environment by default) |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:e2e` | Playwright browser suite (needs `npx playwright install chromium` once) |
 | `npm run test:all` | unit suite then browser suite |
