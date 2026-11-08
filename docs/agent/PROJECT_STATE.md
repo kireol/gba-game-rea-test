@@ -65,7 +65,7 @@ everything else, including the deliverable list.
   `1ca7338` → `d15e1fd` → `10f1252` → `8a5609a` (incoming-rows lift fixes +
   `lines.test.ts`) → `f864f81` (`timings` + `levels` suites, two fixes below) →
   `471d62d` (`session.test.ts`) → `8551a67` (`modes.test.ts` + `duel.test.ts`)
-  → this commit (`blocks.test.ts`).
+  → `a5e4088` (`blocks.test.ts`) → this commit (`determinism.test.ts`).
   ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
@@ -83,12 +83,12 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **201 passed / 201** in
-  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel,blocks}.test.ts`
-  + `helpers.ts` (`npx vitest run`, 876 ms; `npx tsc --noEmit` clean). `board`,
+* Rules-layer tests running green: **208 passed / 208** in
+  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel,blocks,determinism}.test.ts`
+  + `helpers.ts` (`npx vitest run`, 1.43 s; `npx tsc --noEmit` clean). `board`,
   `pieces`, `random`, `scoring` were committed in `fd83195` and `1ca7338`,
   `movement` in `10f1252`, `lines` in `8a5609a`, `timings`/`levels` in `f864f81`,
-  `session` in `471d62d`, `modes`/`duel` in `8551a67`.
+  `session` in `471d62d`, `modes`/`duel` in `8551a67`, `blocks` in `a5e4088`.
 * **Six** rules bugs found by these suites and fixed, each verified by a mutation
   check (breaking the fix fails exactly those tests and nothing else) — five in
   `src/gameplay/session.ts`, one in `src/modes/goal-ladder.ts`:
@@ -156,6 +156,26 @@ everything else, including the deliverable list.
   by `blocks.test.ts` itself** (most also by `modes.test.ts`, and the two
   `floodSameColour` edits also by `board.test.ts`). `git status --porcelain
   src/engine src/modes` empty afterwards.
+* **Mutation check of the determinism suite** (`src/tests/determinism.test.ts`,
+  7 tests; `/tmp/mutate-determinism2.py`): 8 replay-coupling edits inside
+  `src/gameplay/session.ts` — the piece generator not seeded, the piece queue
+  shared between sessions, the frame counter and the hold slot moved to module
+  scope, `advance` handing back one event instead of draining the queue, the
+  ghost option gating a rule instead of a read, `seconds` read from the wall
+  clock, and the generator memoised across sessions — **all 8 killed, each one by
+  `determinism.test.ts` itself**. `src/gameplay` byte-identical afterwards
+  (`git status --porcelain src/gameplay` empty).
+  The first pass (`/tmp/mutate-determinism.py`) is the negative control for the
+  harness rather than for the suite: its d3/d7 were **equivalent** mutants —
+  `let frames = sharedFrames;` copies a module counter that nothing ever writes
+  back, so no run can tell it from the original — and its d4–d8 results are void
+  because the restore of those two edits corrupted the file for everything that
+  followed. Two harness rules follow from that: an edit whose replacement text is
+  **empty** must not be restored by the usual reverse-replace (`replace("", old, 1)`
+  inserts at byte 0, which is how the two declarations ended up duplicated at the
+  top of `session.ts`) — express a deletion as a replacement with valid non-empty
+  text — and no foreground test may run while a mutation driver is live, or the
+  reading comes from whichever mutant happens to be on disk.
 
 ## 4. In progress
 
@@ -201,9 +221,15 @@ everything else, including the deliverable list.
   colour while the incoming row beside it stays put; a row of star blocks raises
   the level and replaces itself whether the mode pushed it in or the player built
   it; star blocks do not chain with each other either; and the star-row countdown
-  reads the *lowest* star row, following it when an incoming row lifts the stack).
-  Remaining: `determinism`,
-  `persistence`, `bindings`, `assets`.
+  reads the *lowest* star row, following it when an incoming row lifts the stack),
+  and `determinism` (one seed replays frame for frame across two independently
+  built sessions, however the caller splits its frames across `advance` calls and
+  however often it reads the view in between, at two seeds where neither seed
+  replays as the other, whatever presentation options are on, even after other
+  runs — two more modes, a third copy of the same seed at a different seed, and
+  both sides of a `createDuel` — were built and driven in between, and finishing
+  on the same frame with the same board every time).
+  Remaining: `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
   and `input()` emits synchronously on key-down, so a helper that calls
@@ -252,6 +278,28 @@ everything else, including the deliverable list.
   of a literal. `receiveGarbage(rows)` is the public entry for an incoming row
   (`addGarbage` / `pushRow` exist only on `ModeApi`); each row arrives with one hole
   and drains on `advance(0)`.
+* Facts the determinism suite added: `createRng(opts.seed)` is the **one** stream a
+  run has — it feeds the 7-bag *and* `randomHoles()` *and* reaches `ModeApi.rng` —
+  so anything that consumes a draw (a mode's opening garbage, a longer
+  `queueLength`, garbage arriving mid-run) offsets every later piece. That is the
+  mechanism behind the FUSION opening-order rule, and why `queueLength` is a
+  **rules-visible** option: a deeper initial fill deals different pieces. `ghost`
+  is the only purely cosmetic option, which is exactly why it gets its own mutant.
+  `snapshot()` hands out the **live** `board` and `active` (the contract is
+  "must not mutate", not a frozen handle), so a fingerprint has to copy their
+  contents out — `active` as `id@rot x,y` and the board as its cell bytes joined.
+  `digest()` is the documented replay fingerprint (`frames, level, lines, score,
+  pieces, status, queue, holdId, board`), and `GoalInfo` has
+  `kind / label / current / numeric / target` where `current` is a **string** —
+  there is no `text` field. `makeSession`'s first argument is a `ModePlugin`, not a
+  config. A scripted run that hard-drops tops out around frame **350**, so a
+  long replay window has to level the field out periodically (the suite resets every
+  100 frames) or the tail compares two dead sessions; `completeFloor` is then the
+  guaranteed-clear epilogue that keeps the commit path inside every window. A
+  replay handle (`Session.fork()`, or exposing the session's randomizer) is
+  deliberately **not** implemented: seed-equal twins plus `digest()` already cover
+  "deterministic seeds", and an API the app does not need would only be a mutation
+  target.
 * Verified frame numbers in our implementation: level-1 gravity moves on frame
   **50**; soft drop on **1, 5, 9**; DAS repeats at **16, 22, 28** after the
   immediate key-down move, so a tap is exactly one column; the piece locks on the
@@ -310,7 +358,8 @@ everything else, including the deliverable list.
 1. Engine + tests: board, pieces, collision/rotation (no kicks), gravity/lock,
    line clear, seeded 7-bag, ghost, hold. **Written and tested** (gravity/lock/
    spawn/freeze timings pinned by `timings.test.ts`, the state machine and mode
-   contract by `session.test.ts`); remaining test file: `determinism`.
+   contract by `session.test.ts`). Remaining rules-layer test files:
+   `persistence`, `bindings`, `assets`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
    unlocks, high scores, reset-with-confirmation). **Written**; the session core
