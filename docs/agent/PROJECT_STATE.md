@@ -64,7 +64,8 @@ everything else, including the deliverable list.
 * Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
   `1ca7338` → `d15e1fd` → `10f1252` → `8a5609a` (incoming-rows lift fixes +
   `lines.test.ts`) → `f864f81` (`timings` + `levels` suites, two fixes below) →
-  `471d62d` (`session.test.ts`) → this commit (`modes.test.ts` + `duel.test.ts`).
+  `471d62d` (`session.test.ts`) → `8551a67` (`modes.test.ts` + `duel.test.ts`)
+  → this commit (`blocks.test.ts`).
   ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
@@ -82,12 +83,12 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **193 passed / 193** in
-  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel}.test.ts`
-  + `helpers.ts` (`npx vitest run`, 737 ms; `npx tsc --noEmit` clean). `board`,
+* Rules-layer tests running green: **201 passed / 201** in
+  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel,blocks}.test.ts`
+  + `helpers.ts` (`npx vitest run`, 876 ms; `npx tsc --noEmit` clean). `board`,
   `pieces`, `random`, `scoring` were committed in `fd83195` and `1ca7338`,
   `movement` in `10f1252`, `lines` in `8a5609a`, `timings`/`levels` in `f864f81`,
-  `session` in `471d62d`.
+  `session` in `471d62d`, `modes`/`duel` in `8551a67`.
 * **Six** rules bugs found by these suites and fixed, each verified by a mutation
   check (breaking the fix fails exactly those tests and nothing else) — five in
   `src/gameplay/session.ts`, one in `src/modes/goal-ladder.ts`:
@@ -143,6 +144,18 @@ everything else, including the deliverable list.
   and the totals line vanishes, so the driver has to treat a nonzero exit or a
   missing total as a kill, which is what turned `f4-no-star-counted` from a
   reported survivor into a kill.
+* **Mutation check of the special-block suite**
+  (`src/tests/blocks.test.ts`, 8 tests; `/tmp/mutate-blocks.py`): 16 single edits
+  over the rules that suite owns — FUSION's `extendClear` seed range (both
+  directions: garbage allowed in, the line colour shut out), `starTouch` counting
+  (never counted, garbage counted too), the `starTouch === 0` guard, the level
+  step, the fresh star row, `starRow()`'s bottom-up scan, `missing()`'s
+  no-star-row value and its EMPTY test, `LEVEL_GARBAGE`/`STAR_HOLES`,
+  `board.floodSameColour`'s same-value test and its up/down neighbours, and the
+  `GARBAGE`/`STAR` cell values themselves — **all 16 killed, and every one of them
+  by `blocks.test.ts` itself** (most also by `modes.test.ts`, and the two
+  `floodSameColour` edits also by `board.test.ts`). `git status --porcelain
+  src/engine src/modes` empty afterwards.
 
 ## 4. In progress
 
@@ -179,8 +192,17 @@ everything else, including the deliverable list.
   sending one row and a perfect clear two, the receiver's `garbage` surfacing on
   the *next* drain because the wrapper routes attacks after both cores advanced,
   no win from clearing, the winner read only from a top-out, and pause never
-  reviving a lost side).
-  Remaining: `blocks`, `determinism`,
+  reviving a lost side), and `blocks` (the two special kinds hold cell values
+  outside the seven piece colours and never come out of a piece over a six-piece
+  run; a star block is solid, so a piece rests on the row instead of sinking into
+  it; an incoming row clears as an ordinary line at the ordinary price, checked
+  against `clearScore` and against the same field filled with piece blocks; neither
+  kind joins a clear that touches it — a standing line is pulled whole by its own
+  colour while the incoming row beside it stays put; a row of star blocks raises
+  the level and replaces itself whether the mode pushed it in or the player built
+  it; star blocks do not chain with each other either; and the star-row countdown
+  reads the *lowest* star row, following it when an incoming row lifts the stack).
+  Remaining: `determinism`,
   `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
@@ -216,6 +238,20 @@ everything else, including the deliverable list.
   For the shared `SEED = 0x5eed1234` the first ten bag pieces are
   **L, Z, I, S, O, J, T, S, L, T**, so a fresh session opens on L with queue
   `[Z, I, S]`; `cellOf('L') === 7`.
+  Facts the special-block suite added, same reason: in FUSION a locked piece's
+  cells are always connected and one colour, so the flood seeded from the cell that
+  sits in the cleared row pulls the **whole contributing piece** — including the
+  cells above that row. A FUSION fixture therefore can never leave "leftover" piece
+  cells, and a one-line clear there empties the field, which pays the perfect-clear
+  price (level 1: 1100 = 100 + `PERFECT_CLEAR_BONUS` 1000). `LINE_SCORES` is
+  module-private, so `clearScore(1, 1, perfect, 0).points` is the anchor for a
+  single line; the `lines` event's amount field is **`score`** (what that clear
+  paid, not the running total) and no event carries `extended` — that is only the
+  mode hook's fourth argument. The line piece's upright rotation occupies column
+  **`x + 3`**, not `x + 1`, so aim it with an offset derived from `cellsOf` instead
+  of a literal. `receiveGarbage(rows)` is the public entry for an incoming row
+  (`addGarbage` / `pushRow` exist only on `ModeApi`); each row arrives with one hole
+  and drains on `advance(0)`.
 * Verified frame numbers in our implementation: level-1 gravity moves on frame
   **50**; soft drop on **1, 5, 9**; DAS repeats at **16, 22, 28** after the
   immediate key-down move, so a tap is exactly one column; the piece locks on the
