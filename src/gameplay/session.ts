@@ -292,6 +292,10 @@ export const createSession = (opts: SessionOpts): Session => {
     pendingCells = cells;
     pendingRows = rows;
     clearTimer = Math.max(0, config.clearFreezeFrames);
+    // `step` commits when the countdown reaches zero, so a config with no flash
+    // needs the commit here — otherwise the rows sit pending with no active piece
+    // and no spawn timer, and the run stops dead.
+    if (clearTimer === 0) commitClear();
   };
 
   const doHardDrop = (): void => {

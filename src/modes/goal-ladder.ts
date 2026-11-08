@@ -24,7 +24,11 @@ export const goalLadderMode: ModePlugin = {
     const need = (level: number): number => api.config.goalBase * level;
     let intoLevel = 0;
     let over: GameStatus = 'playing';
-    const left = (): number => Math.max(0, need(api.level) - intoLevel);
+    // A finished ladder has no lines left to ask for. `onClear` pays the goal
+    // before it notices the level cap, so the remainder would otherwise be a
+    // whole goal on the screen of a run the player just won.
+    const left = (): number =>
+      over === 'won' ? 0 : Math.max(0, need(api.level) - intoLevel);
     return {
       hud: () => [timeRow('TIME', api.seconds), goalRow(left()), levelRow(api.level)],
       goal: (): GoalInfo => ({

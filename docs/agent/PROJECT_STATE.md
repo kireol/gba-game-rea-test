@@ -62,9 +62,9 @@ everything else, including the deliverable list.
   (91 packages) on 2026-11-07 — an earlier `node_modules` was absent, so nothing
   had actually been installed before that.
 * Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
-  `1ca7338` → `d15e1fd` → `10f1252` → **uncommitted (this group)**:
-  `src/gameplay/session.ts`, `src/tests/lines.test.ts`, this file. ROM and
-  reference screenshots are gitignored (`rom/`,
+  `1ca7338` → `d15e1fd` → `10f1252` → `8a5609a` (incoming-rows lift fixes +
+  `lines.test.ts`) → this commit (`timings` + `levels` suites, two fixes below).
+  ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
   `$1` / `$REFERENCE_ROM` / first `rom/*.gba`).
@@ -81,14 +81,14 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **101 passed / 101** in
-  `src/tests/{board,pieces,random,scoring,movement,lines}.test.ts` + `helpers.ts`
-  (`npx vitest run`, 791 ms; `npx tsc --noEmit` clean). `board`, `pieces`,
-  `random`, `scoring` were committed in `fd83195` and `1ca7338`, `movement` in
-  `10f1252`.
-* **Four** rules bugs found by these suites and fixed in
-  `src/gameplay/session.ts`, each verified by a mutation check (breaking the fix
-  fails exactly those tests and nothing else):
+* Rules-layer tests running green: **122 passed / 122** in
+  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels}.test.ts`
+  + `helpers.ts` (`npx vitest run`, 465 ms; `npx tsc --noEmit` clean). `board`,
+  `pieces`, `random`, `scoring` were committed in `fd83195` and `1ca7338`,
+  `movement` in `10f1252`, `lines` in `8a5609a`.
+* **Six** rules bugs found by these suites and fixed, each verified by a mutation
+  check (breaking the fix fails exactly those tests and nothing else) — five in
+  `src/gameplay/session.ts`, one in `src/modes/goal-ladder.ts`:
   * `held.left`/`held.right` were never recorded, so `handleAutoShift` always
     bailed and DAS/ARR were dead code — holding a direction moved exactly one
     column. Now set in the `input()` switch, the only place that knows which side
@@ -103,14 +103,31 @@ everything else, including the deliverable list.
     fits: `collides` treats cells above row 0 as free, so a piece could be "lifted"
     outside the field and play continued with it hanging there. The lift is now
     bounded by the piece's own top row and anything past that is a top-out.
+  * `lockPiece` armed the clear freeze and left the commit to `step`, which only
+    fires when the countdown ticks down. With `clearFreezeFrames: 0` the rows sat
+    pending with no active piece and no spawn timer, so `if (!active) return`
+    stopped the run forever — a config with the flash switched off was unplayable.
+    `lockPiece` now commits straight away when the timer is zero.
+  * The ladder mode pays the goal *before* it notices the level cap, so a winning
+    clear left `intoLevel` at zero and the HUD asked for a whole fresh goal
+    (`GOAL 10`) on a run the player had just finished. `left()` now reports no
+    remaining lines once the ladder is won; the goal bookkeeping is untouched.
 
 ## 4. In progress
 
 * Writing the rules-layer Vitest suite. Done: `board`, `pieces`, `random`,
   `scoring`, `movement` (column movement + DAS/ARR, rotation, projection, hard
   drop, hold, input while paused), `lines` (clear freeze, whole-row collapse,
-  totals, four-row clear, perfect flag, combo counters, incoming rows, top-outs).
-  Remaining: `timings`, `session`, `levels`, `modes`, `blocks`, `determinism`,
+  totals, four-row clear, perfect flag, combo counters, incoming rows, top-outs),
+  `timings` (gravity period, level table incl. clamping, difficulty scaling in the
+  table *and* on the session clock, soft-drop interval and payout, revert to
+  natural gravity on key-up, lock on the first landed frame, custom lock delay,
+  lock window restarted by a ground move, no lock window mid-fall, spawn delay,
+  freeze-off commit, frame/second/HUD clock), `levels` (ASCENT: starting goal,
+  countdown, level-up on the goal line, leftover carry-over, one piece climbing
+  several levels, no double climb, victory at `maxLevel`, clock frozen after the
+  win).
+  Remaining: `session`, `modes`, `blocks`, `determinism`,
   `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
@@ -156,6 +173,12 @@ everything else, including the deliverable list.
   uniformly, a one-row-tall piece is always freed by a lift of exactly 1; a piece
   that needs more than its own top row is a top-out instead. `lines.test.ts` pins
   all of this, including that garbage after the run ended is refused outright.
+* ASCENT bookkeeping (`src/modes/goal-ladder.ts`): `intoLevel` counts the lines
+  since the last level-up, the goal is `goalBase × level`, and `onClear` subtracts
+  the goal *before* the level-cap test, so one clear can climb several levels and
+  leftovers carry into the next goal. `goal()` returns `kind: 'lines-to-level'`
+  with `current` / `numeric` / `target`, which is not the shape
+  `docs/architecture/interfaces.md` documents — fix that in the docs pass too.
 * `docs/asset-provenance.md` lists a `pause` sfx that `SfxName` does not have, and
   `docs/architecture/interfaces.md` still shows pre-implementation signatures
   (`events()` as a property, `pushRow(cell, holes: COUNT)` argument order,
@@ -173,12 +196,14 @@ everything else, including the deliverable list.
 ## 5. Outstanding tasks
 
 1. Engine + tests: board, pieces, collision/rotation (no kicks), gravity/lock,
-   line clear, seeded 7-bag, ghost, hold. **Written and tested**; remaining test
-   files: `timings`, `session`, `determinism`.
+   line clear, seeded 7-bag, ghost, hold. **Written and tested** (gravity/lock/
+   spawn/freeze timings now pinned by `timings.test.ts`); remaining test files:
+   `session`, `determinism`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
-   unlocks, high scores, reset-with-confirmation). **Written**; the level/mode
-   suites and `persistence`/`bindings` tests are still owed, and persistence has
+   unlocks, high scores, reset-with-confirmation). **Written**; ASCENT is covered
+   by `levels.test.ts`, the other five single-player modes, DUEL and
+   `persistence`/`bindings` tests are still owed, and persistence has
    never run against a browser `localStorage`.
 3. Modes: 6 single-player + DUEL, each its own rules module + tests. **Written**,
    **untested** (`modes.test.ts` still owed; `linked-blocks` has no coverage yet).
@@ -210,6 +235,11 @@ everything else, including the deliverable list.
   `prompt.md` (the user's own brief, committed, excluded from the sweep with a
   printed exception) and the user's outer directory name. Neither is
   project-authored, shipped, or rendered.
+* Working note: file bodies injected into the conversation as "Recently accessed
+  file (full current content embedded)" can be **older than the file on disk** —
+  the `goal-ladder.ts` copy shown on 2026-11-07 described a `goal()` shape the
+  real file does not have, which sent one test design wrong. Read the file, or
+  let the test run decide, before reasoning from an embedded copy.
 
 ## 7. Important files
 
