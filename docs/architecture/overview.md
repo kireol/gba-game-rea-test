@@ -24,9 +24,10 @@ rule that way; this document describes how the code is organised.
      ascent fusion rush      board pieces random config            │
      dash blitz endless duel                                      
            ▲                                                        │
-     src/ui/  scenes.ts (pure menu machine) bindings.ts            
-     src/audio/  engine.ts (WebAudio synth, original material)     
-     src/gameplay/persistence.ts  (localStorage, versioned)        
+     src/ui/  scenes.ts (screen machine) format.ts options.ts widgets.ts
+     src/audio/  engine.ts (WebAudio synth, original material)
+     src/gameplay/persistence.ts  (localStorage, versioned)
+     src/engine/bindings.ts  (intent → key map, rules-visible)
 ```
 
 ## Layers
@@ -37,9 +38,11 @@ rule that way; this document describes how the code is organised.
 | Presentation | `src/render`, `src/audio`, `src/ui` | rules | — |
 | Shell | `src/app` | everything | game logic of its own |
 
-The rules layer is pure and synchronous: `advanceFrame(state)` → new state. That
-is what makes every mechanic in the brief testable without a browser, and what
-makes a seeded session reproducible.
+The rules layer is pure and synchronous: `session.advance(frames)` is the only
+mutator, it takes no clock, and everything observable comes back either as a
+returned `SessionEvent[]` or from `session.snapshot()`. That is what makes every
+mechanic in the brief testable without a browser, and what makes a seeded session
+reproducible.
 
 ## Why these boundaries exist
 
@@ -62,38 +65,62 @@ makes a seeded session reproducible.
   timing constant (`src/engine/config.ts`), because every number in the RE docs is
   expressed in frames.
 * rAF drives the renderer; the accumulator runs 0…N logic steps per drawn frame
-  and clamps at 5 steps so an unhitched tab cannot fast-forward a session.
+  and drops backlog past `MAX_CATCHUP` (4) steps, so an unhitched tab cannot
+  fast-forward a session.
 * `session.advance(frames)` is the only entry point; nothing else mutates state.
+  The shell (`src/app/main.ts`) is the only code that turns a rAF timestamp into a
+  frame count.
 
 ## Scene model
 
-`src/ui/scenes.ts` is a pure reducer over scene identifiers and menu selections
-(`title → menu → modeList → play → pause → results`, plus options/bindings).
-It emits intents ("start mode X"); `src/app` performs the side effects. The
-reference's own screen-id byte (`0x0300257B`, values 3/6/8/12/13/16) is the
+`src/ui/scenes.ts` is a screen machine over `SceneId`
+(`title → modes → rules → play → duel → results`, plus `options`, `bindings`,
+`scores`, `confirm`). It is not a reducer: it owns a mutable internal state object
+and the app calls four entry points — `intent(intent, down, player)`, `key(code, down)`,
+`pointer(x, y, action)`, `advance(frames)` — each returning whether the screen
+consumed the event, and one output, `frame(): FrameModel`. The screen creates and
+advances the `Session` itself (the shell never touches it) and asks the host for
+the side effects it cannot perform: `sfx`, `status`, `commit` (a `SaveData`
+replacement), `announce`, `persisted`, `now`. Menus work because each screen
+builds a list of geometries and tests the pointer against the same rows the
+keyboard cursor uses, so mouse and keys cannot drift.
+
+The reference's own screen-id byte (`0x0300257B`, values 3/6/8/12/13/16) is the
 reminder that the reference is also a screen state machine — we implement our own
 enum and borrow nothing from its layout.
 
 ## Mode modules
 
-`src/modes/<id>.ts` exports a `ModePlugin`:
+`src/modes/<id>.ts` exports a `ModePlugin` (one file per mode id: `goal-ladder`,
+`linked-blocks`, `timed-goal`, `fixed-lines-race`, `timed-max-lines`,
+`rising-garbage`, `duel`, plus `types.ts` and `registry.ts`):
 
 ```ts
 export interface ModePlugin {
-  id: ModeId;              // internal, plain-mechanic name
-  label: string;           // player-facing, our own branding
-  summary: string;         // shown in the mode list
-  rules: readonly string[];// shown on the rules screen (our own words)
-  config: Partial<GameConfig>;   // gravity table, goal rule, garbage, timers
-  goal(ctx): GoalState;          // what the HUD's counter means in this mode
-  onClear(ctx, n): ModeEffect[]; // per-mode reaction to a clear
-  isFinished(ctx): 'running' | 'won' | 'lost';
+  id: string;                 // internal, plain-mechanic name
+  label: string;              // player-facing, our own branding
+  family: 'single' | 'versus';
+  summary: string;            // shown in the mode list
+  rules: readonly string[];   // shown on the rules screen (our own words)
+  showLines: boolean;         // results screen shows a LINES row
+  timeUpLabel?: string;       // header when the clock ends the run
+  createRun(api: ModeApi): ModeRun;        // the mode's rule object for one run
+  setupBoard?(board: Board, api: ModeApi): void;   // seed the opening field
 }
 ```
 
+There is no `config` override and no `goal(ctx)`/`isFinished(ctx)` on the plugin:
+those questions live on the per-run object `createRun` returns
+(`hud()` / `goal()` / `status()` / `advance()` / `onLock()` / `extendClear()` /
+`onClear()` / `onGarbage()` / `extra()`), and the mode reaches the shared mechanics
+only through `ModeApi` (`config`, `difficulty`, `rng`, `board`, `level`, `lines`,
+`frames`, `seconds`, `status`, `setStatus`, `setLevel`, `addGarbage`, `pushRow`,
+`emit`). Full signatures: `interfaces.md`.
+
 `session.ts` supplies the shared mechanics (movement, rotation, collision,
-gravity, lock, clear, hold, ghost, queue) and asks the plugin the mode-specific
-questions. `src/modes/duel/` composes two sessions and adds garbage attacks —
+gravity, lock, clear, hold, ghost, queue) and asks the run the mode-specific
+questions. `src/modes/duel.ts` is thin — the versus screen lives in
+`src/gameplay/duel.ts`, which composes two sessions and routes garbage attacks,
 the local substitute for the reference's link-cable mode
 (`docs/architecture/decisions.md` D4).
 
@@ -109,9 +136,10 @@ keyboard/mouse → app/input.ts → Intent → session.advance(frames)
                                                       persistence (end of run)
 ```
 
-Events are data (`{type:'line-clear', rows, n}` …); the renderer and audio layer
-subscribe to the same list and own all their own animation state, so a rules
-change can never silently alter how something looks.
+Events are data (`{ type: 'lines', rows, count, score, perfect }`,
+`{ type: 'sfx', name: 'lock' }`, `{ type: 'status', status: 'won' }` …); the
+renderer and audio layer consume the same list and own all their own animation
+state, so a rules change can never silently alter how something looks.
 
 ## What is deliberately *not* here
 

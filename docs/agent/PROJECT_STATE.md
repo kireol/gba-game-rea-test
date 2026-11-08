@@ -35,7 +35,7 @@ everything else, including the deliverable list.
   linked units, which a browser single-window build cannot honour.
 * **Score is an opt-in extra**: the reference exposes no score field anywhere, so
   a score table would be our design, not a finding. Hidden by default
-  (`options.showScore`, default `false`). See `docs/game-design.md`.
+  (`settings.showScore`, default `false`). See `docs/game-design.md`.
 * **All assets procedural/in-repo.** No fonts, images or audio files are
   downloaded or bundled; the pixel font, art and audio are authored in code.
   `docs/asset-provenance.md`.
@@ -208,10 +208,11 @@ everything else, including the deliverable list.
   Verified 2026-11-08: `npm run build` → **BUILD_EXIT=0**, 35 modules,
   `dist/assets/index-*.js` 68.49 kB (gzip 24.62 kB); `npx vitest run` →
   **248 passed / 248** across 15 files; `npm run test:e2e` → **7 passed (24.0 s)**;
-  `npm run report` → **PASS**, 86 files scanned (one acknowledged exception, § 6).
+  `npm run report` → **PASS**, 89 files scanned (3 registered exceptions, all of
+  them today's hits coming from one line of the browser suite; § 6).
   The rules layer still imports no DOM/Canvas/WebAudio — the separation the brief
   demands holds with the UI on top of it.
-* `src/tests/layout.test.ts` (13 tests, `// @vitest-environment jsdom`) pins
+* `src/tests/layout.test.ts` (14 tests, `// @vitest-environment jsdom`) pins
   `computeScale` / `cssSize` / `createLayout`: largest whole factor fitting both
   axes; flooring instead of rounding up (1199×1600 → 4, because 1199/240 = 4.996
   and rounding would stretch the board; 1440×160 → 1 because the height binds);
@@ -502,15 +503,28 @@ everything else, including the deliverable list.
 * `Scenes.debug(): SceneDebug { scene, status: GameStatus | null, seed, countdown,
   modeId, lines, score, level, pieces }` — `status` is the live session status and is
   **null outside play/duel**. Verified.
-* Still owed from earlier groups: `docs/asset-provenance.md` lists a `pause` sfx that
-  `SfxName` does not have, and `docs/architecture/interfaces.md` still shows
-  pre-implementation signatures (`events()` as a property, `pushRow(cell, COUNT)`
-  argument order, `clearScore` shape, `ghost: number | null`, T spawning nub-down),
-  and does not yet document the frame model's `fields` array, `debug()`/`SceneDebug`,
-  the app layer, the pointer rule above, or the list geometries. `docs/architecture/`
-  must also drop any claim about a nonexistent `src/tests/render.test.ts`.
-* Commit groups: engine+gameplay+modes → tests → **render/audio/app/ui + configs +
-  index.html + e2e + layout tests (this one)** → README/TODO/CHANGELOG + docs pass.
+* **Docs correction pass finished 2026-11-08** over `docs/architecture/` (all five
+  files), `docs/asset-provenance.md` and `docs/game-design.md`. The inherited claims
+  it disproved, with what the sources actually say:
+  * `src/render/font5x7.ts` has **63 keys**; every glyph is exactly 7 rows of 5
+    characters using only `#` and `.`; of the 95 printable ASCII characters the six
+    with **no glyph at all** are `` `" $ [ ] ` ~` ``, and the space is the only key
+    whose glyph carries no ink. Notes here previously said 61 keys and a different
+    character set; `node` evaluation over the `G` table settles it.
+  * A production `dist/` is `index.html` + one JS bundle + its map. **There is no CSS
+    file** — the stylesheet is inline in `index.html` (`grep -c '<style>' index.html`
+    → 1) — so "one HTML, one JS and one CSS file" was wrong, including in the fresh
+    `README.md`.
+  * `src/audio/engine.ts` is exercised by **no test at all**, Node or browser
+    (`grep -n audio tests/e2e/playable.spec.ts` → nothing). `build.md` claimed the
+    browser suite covered it.
+  * `build.md` also claimed unit tests cover `src/render` and `src/ui`; only
+    `src/render/blocks.ts` (8 tests) is unit-tested and `src/ui` has none.
+  * `layout.test.ts` has **14** tests, not 13. `SfxName` has 17 entries, no `pause`.
+  * The RE harness lives in `tools/re/*.py` + `scripts/{start-mgba,load-bridge}.sh`;
+    there is no `scripts/mgba-lib.mjs` or `scripts/probe.mjs`.
+* Commit groups: engine+gameplay+modes → tests → render/audio/app/ui + configs +
+  index.html + e2e + layout tests → **README/TODO/CHANGELOG + docs pass (this one)**.
 
 
 ## 5. Outstanding tasks
@@ -518,8 +532,7 @@ everything else, including the deliverable list.
 1. Engine + tests: board, pieces, collision/rotation (no kicks), gravity/lock,
    line clear, seeded 7-bag, ghost, hold. **Written and tested** (gravity/lock/
    spawn/freeze timings pinned by `timings.test.ts`, the state machine and mode
-   contract by `session.test.ts`). Remaining rules-layer test files:
-   `bindings`, `assets`.
+   contract by `session.test.ts`). Remaining rules-layer test file: `bindings`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
    unlocks, high scores, reset-with-confirmation). **Written and tested**; the
@@ -538,7 +551,7 @@ everything else, including the deliverable list.
    browser suite; no unit tests of its own yet** — see § 4 items 3–4.
 5. Render (own 5×7 pixel font, procedural art), audio (WebAudio synth, original
    material), fullscreen + responsive scaling with correct aspect. **Written and
-   browser-verified for scaling** (`layout.test.ts` 13 tests + the e2e viewport
+   browser-verified for scaling** (`layout.test.ts` 14 tests + the e2e viewport
    test). `toggleFullscreen` is only proven not to throw where the API is missing;
    a real fullscreen transition is untested. Font/art/audio have no tests.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
@@ -550,17 +563,22 @@ everything else, including the deliverable list.
    that with a double only, so item 2's browser-storage caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
    `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
-   green on 2026-11-08**: build/typecheck `BUILD_EXIT=0` (35 modules); vitest
-   `248 passed (248)`; Playwright `7 passed (24.0s)`; sweep `PASS — no blocking
-   hits`, 86 files, 3 acknowledged. Re-run all five after any change — `build` runs
-   `typecheck` first, and `test:e2e`'s webServer runs `build`, so one type error
-   anywhere under `src/` or `tests/` breaks the browser suite too.
+   green on 2026-11-08** (re-run after the docs pass, `/tmp/f_*.txt`): build/typecheck
+   `BUILD_EXIT=0` (35 modules); vitest `248 passed (248)` in 15 files, 3.40 s;
+   Playwright `7 passed (23.6s)`; sweep `PASS — no blocking hits`, 89 files,
+   3 acknowledged. Re-run all five after any change — `build` runs `typecheck` first,
+   and `test:e2e`'s webServer runs `build`, so one type error anywhere under `src/`
+   or `tests/` breaks the browser suite too.
 8. `README.md`, `TODO.md`, `CHANGELOG.md`, milestone report (§ 14 of the brief:
    completed / reverse-engineered / remaining / discrepancies / test results / next
-   steps). **Not written.** Unblocked since the build and the browser suite went
-   green — this is the highest-value remaining deliverable.
+   steps). **Written 2026-11-08**: repo-root `README.md`, `TODO.md`, `CHANGELOG.md`
+   and `docs/agent/MILESTONE-2026-11-08.md`. They are authored so they cannot trip
+   the licence gate themselves — the repo directory's name never appears in them, and
+   the sweep passed over them (89 files).
 9. Docs pass over `docs/architecture/` and `docs/asset-provenance.md` (details in
-   § 4). Every doc is already tracked, so this is an edit pass, not an add.
+   § 4). **Done in the same group as item 8**, together with `docs/game-design.md`
+   § 3/§ 5 (its "12 actions" row, its fictional mouse mapping and its stale
+   `assist.showScore` key are gone).
 
 ## 6. Known issues & blockers
 

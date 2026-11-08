@@ -60,7 +60,7 @@ The reference shows `TIME`, `GOAL`, `LEVEL` while playing and `TIME`, `LINES`,
 Orbit Drop keeps exactly those fields. `GOAL` is re-labelled per mode (e.g.
 `TIME LEFT`, `LINES LEFT`) because what the counter means is mode-specific.
 
-Score exists as an **opt-in** field (`assist.showScore`, default **off**) so that
+Score exists as an **opt-in** field (`settings.showScore`, default **off**) so that
 high scores can be compared and persisted; the results screen and HUD reveal it
 only when enabled. [D] — reason: D5 in `docs/architecture/decisions.md`.
 
@@ -120,9 +120,14 @@ D3.
 * Pause: resume / options / restart / quit. [M] three-row pause; [O] its items
 * Results: mode, `TIME`, `LINES`, `LEVEL` (+ `SCORE` when enabled), the run's
   seed for reproducibility, best-per-mode line. [M] the three stats; [O] seed/best
-* Controls: fully rebindable keys (12 actions, conflict detection) plus mouse —
-  click = rotate clockwise, right-click = counter-clockwise, wheel = soft/hard
-  drop, click anywhere = pause. Menus are keyboard *and* mouse.
+* Controls: fully rebindable keys — 14 bindable rows, conflict detection, and a
+  restore-defaults control on the bindings screen. The reference's own mapping is the
+  handheld's button layout (`gameplay-mechanics.md` § 6) [M]; the mouse is ours [O]:
+  hover moves the menu cursor, a click activates the row under the pointer, and in a
+  run a click on the field hard-drops while the hold slot or the middle button holds.
+  Wheel up rotates clockwise, wheel down soft-drops, `Shift` + wheel holds, and the
+  right button rotates counter-clockwise; wheel and right button never scroll the
+  page. Menus are keyboard *and* mouse.
 * Fullscreen toggle, integer-scaled responsive canvas, `16:10` aspect preserved
   with letterboxing.
 * Persistence: settings, bindings, audio, unlocks, per-mode best runs.
