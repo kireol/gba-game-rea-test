@@ -153,10 +153,14 @@ export const createSession = (opts: SessionOpts): Session => {
       overflow += pushBottomRow(board, cell, randomHoles(holesPerRow));
     }
     if (active && collides(board, active)) {
-      // The active piece must not end up buried inside incoming rows.
+      // The active piece must not end up buried inside incoming rows. The stack
+      // grew by `rows`, so the usual answer is to raise the piece by that much:
+      // count up from where it stands until a row is free. A lift that would move
+      // the piece off the top is a top-out, not an escape hatch.
+      const top = Math.min(...cellsOf(active).map((c) => c.y));
       let lift = 0;
-      while (lift < board.rows && collides(board, active, 0, -lift - 1)) lift += 1;
-      if (lift > 0 && lift < board.rows && !collides(board, active, 0, -lift)) active.y -= lift;
+      while (lift < board.rows && collides(board, active, 0, -lift)) lift += 1;
+      if (lift <= top) active.y -= lift;
       else setStatusDirect('lost');
     }
     if (overflow > 0) setStatusDirect('lost');

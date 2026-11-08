@@ -62,7 +62,9 @@ everything else, including the deliverable list.
   (91 packages) on 2026-11-07 — an earlier `node_modules` was absent, so nothing
   had actually been installed before that.
 * Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
-  `1ca7338` → `d15e1fd`. ROM and reference screenshots are gitignored (`rom/`,
+  `1ca7338` → `d15e1fd` → `10f1252` → **uncommitted (this group)**:
+  `src/gameplay/session.ts`, `src/tests/lines.test.ts`, this file. ROM and
+  reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
   `$1` / `$REFERENCE_ROM` / first `rom/*.gba`).
@@ -79,26 +81,37 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **88 passed / 88** in
-  `src/tests/{board,pieces,random,scoring,movement}.test.ts` + `helpers.ts`
-  (`npx vitest run`, 531 ms; `npx tsc --noEmit` clean). The first four files were
-  committed in `fd83195` and `1ca7338`.
-* Two rules bugs found by the movement suite and fixed in
-  `src/gameplay/session.ts`, both verified by a mutation check (breaking the fix
+* Rules-layer tests running green: **101 passed / 101** in
+  `src/tests/{board,pieces,random,scoring,movement,lines}.test.ts` + `helpers.ts`
+  (`npx vitest run`, 791 ms; `npx tsc --noEmit` clean). `board`, `pieces`,
+  `random`, `scoring` were committed in `fd83195` and `1ca7338`, `movement` in
+  `10f1252`.
+* **Four** rules bugs found by these suites and fixed in
+  `src/gameplay/session.ts`, each verified by a mutation check (breaking the fix
   fails exactly those tests and nothing else):
   * `held.left`/`held.right` were never recorded, so `handleAutoShift` always
     bailed and DAS/ARR were dead code — holding a direction moved exactly one
     column. Now set in the `input()` switch, the only place that knows which side
     an intent belongs to.
   * `doHold()` with an empty slot moved the piece into the slot but left it in
-    play, i.e. a free duplicate. Now `active = null`.
+    play, i.e. a free duplicate. Now `active = null`, with the spawn delay armed.
+  * `insertRows` searched for a free offset with `collides(..., -lift - 1)`, which
+    can never report "a lift of one is enough" — the usual case of a piece buried
+    by incoming garbage therefore declared the run lost. Now counts up from the row
+    the piece stands on (`-lift`); the new lift test fails against the old loop.
+  * That same block then applied whatever offset it had found without checking it
+    fits: `collides` treats cells above row 0 as free, so a piece could be "lifted"
+    outside the field and play continued with it hanging there. The lift is now
+    bounded by the piece's own top row and anything past that is a top-out.
 
 ## 4. In progress
 
 * Writing the rules-layer Vitest suite. Done: `board`, `pieces`, `random`,
   `scoring`, `movement` (column movement + DAS/ARR, rotation, projection, hard
-  drop, hold, input while paused). Remaining: `timings`, `lines`, `session`,
-  `levels`, `modes`, `blocks`, `determinism`, `persistence`, `bindings`, `assets`.
+  drop, hold, input while paused), `lines` (clear freeze, whole-row collapse,
+  totals, four-row clear, perfect flag, combo counters, incoming rows, top-outs).
+  Remaining: `timings`, `session`, `levels`, `modes`, `blocks`, `determinism`,
+  `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
   and `input()` emits synchronously on key-down, so a helper that calls
@@ -131,7 +144,18 @@ everything else, including the deliverable list.
   immediate key-down move, so a tap is exactly one column; the piece locks on the
   first landed frame (`lockDelayFrames: 0`); `lines` lands on frame
   **`clearFreezeFrames` (30)**; `completeFloor(s, rows)` needs the field otherwise
-  **empty**, because a piece lands on any debris and then misses the floor row.
+  **empty**, because a piece lands on any debris and then misses the floor row —
+  and a one-row clear leaves the clearing piece's own upper cells in the floor row,
+  so two `completeFloor` calls in a row need `emptyBoard` between them.
+* Incoming-row semantics (`insertRows`, shared by garbage and a mode's own bottom
+  rows): `pushBottomRow` only counts an overflow when row 0 was already occupied
+  *before* the shift, so pushing exactly `board.rows` rows onto an empty field fills
+  it without losing, and `board.rows + 1` is what ends the run. Every incoming row
+  keeps `holesPerRow` holes (garbage uses 1), and `randomHoles` clamps that to
+  `cols - 1` so a row can never arrive solid. Because the whole stack shifts
+  uniformly, a one-row-tall piece is always freed by a lift of exactly 1; a piece
+  that needs more than its own top row is a top-out instead. `lines.test.ts` pins
+  all of this, including that garbage after the run ended is refused outright.
 * `docs/asset-provenance.md` lists a `pause` sfx that `SfxName` does not have, and
   `docs/architecture/interfaces.md` still shows pre-implementation signatures
   (`events()` as a property, `pushRow(cell, holes: COUNT)` argument order,
@@ -149,11 +173,15 @@ everything else, including the deliverable list.
 ## 5. Outstanding tasks
 
 1. Engine + tests: board, pieces, collision/rotation (no kicks), gravity/lock,
-   line clear, seeded 7-bag, ghost, hold.
+   line clear, seeded 7-bag, ghost, hold. **Written and tested**; remaining test
+   files: `timings`, `session`, `determinism`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
-   unlocks, high scores, reset-with-confirmation).
-3. Modes: 6 single-player + DUEL, each its own rules module + tests.
+   unlocks, high scores, reset-with-confirmation). **Written**; the level/mode
+   suites and `persistence`/`bindings` tests are still owed, and persistence has
+   never run against a browser `localStorage`.
+3. Modes: 6 single-player + DUEL, each its own rules module + tests. **Written**,
+   **untested** (`modes.test.ts` still owed; `linked-blocks` has no coverage yet).
 4. UI: scene/menus state machine with mouse hit-testing, options, bindings
    editor, rules screens, results, pause.
 5. Render (own 5×7 pixel font, procedural art), audio (WebAudio synth, original
