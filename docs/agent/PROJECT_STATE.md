@@ -64,7 +64,7 @@ everything else, including the deliverable list.
 * Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
   `1ca7338` → `d15e1fd` → `10f1252` → `8a5609a` (incoming-rows lift fixes +
   `lines.test.ts`) → `f864f81` (`timings` + `levels` suites, two fixes below) →
-  this commit (`session.test.ts`).
+  `471d62d` (`session.test.ts`) → this commit (`modes.test.ts` + `duel.test.ts`).
   ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
@@ -82,11 +82,12 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **143 passed / 143** in
-  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session}.test.ts`
-  + `helpers.ts` (`npx vitest run`, 513 ms; `npx tsc --noEmit` clean). `board`,
+* Rules-layer tests running green: **193 passed / 193** in
+  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel}.test.ts`
+  + `helpers.ts` (`npx vitest run`, 737 ms; `npx tsc --noEmit` clean). `board`,
   `pieces`, `random`, `scoring` were committed in `fd83195` and `1ca7338`,
-  `movement` in `10f1252`, `lines` in `8a5609a`, `timings`/`levels` in `f864f81`.
+  `movement` in `10f1252`, `lines` in `8a5609a`, `timings`/`levels` in `f864f81`,
+  `session` in `471d62d`.
 * **Six** rules bugs found by these suites and fixed, each verified by a mutation
   check (breaking the fix fails exactly those tests and nothing else) — five in
   `src/gameplay/session.ts`, one in `src/modes/goal-ladder.ts`:
@@ -122,6 +123,26 @@ everything else, including the deliverable list.
   deleted the whole suite stayed green, because `step()`'s top-of-frame
   `status !== 'playing'` return stops everything before the guard is ever reached.
   The two lock-driven tests now in the file are what make that guard load-bearing.
+* **Mutation check of the mode suite** (`src/tests/modes.test.ts` 41 tests,
+  `src/tests/duel.test.ts` 9 tests): 41 single edits across the six mode modules,
+  the DUEL plugin and the registry (`/tmp/mutate-modes.py`, re-run over the six
+  survivors once the gaps were closed) — **38 killed**, every one by a test that
+  names the rule, and `src/modes` restored byte-identically afterwards
+  (`restored all: True`, `git status --porcelain src/modes` empty). Two survivors
+  were real gaps and are now closed: BLITZ `/8` and `/6` lines-per-level agree at
+  8 and 16 lines, so the ladder table needed a third sample at 24 lines; and RUSH
+  clamps the remaining quota with `Math.max(0, …)`, which only shows when one
+  clear *overshoots* it — without the clamp the readout goes negative. Three
+  survive on purpose and stay that way: `f9` deletes FUSION's `starTouch = 0`
+  reset in `onClear`, which `extendClear` already performs on every clear; `g4`
+  and `g5` delete the ENDLESS guards against advancing or pushing garbage after
+  the run ended, which `step()` makes unreachable — it returns before
+  `run.advance(1)` once the status is not `playing` (same reasoning as the session
+  `lockPiece` arm above). Harness lesson for the next round: a mutant that leaves
+  a **syntax** error never prints a `×` line — vitest fails to collect the file
+  and the totals line vanishes, so the driver has to treat a nonzero exit or a
+  missing total as a kill, which is what turned `f4-no-star-counted` from a
+  reported survivor into a kill.
 
 ## 4. In progress
 
@@ -145,8 +166,21 @@ everything else, including the deliverable list.
   lock-driven verdict landing in its own frame, mode-emitted events passing
   through, `pushRow` silent vs `addGarbage` announced, HUD rows and goal passed to
   the renderer, one `advance(1)` per frame and none after the run ends, the pause
-  clock, nonsense frame counts, `digest()`).
-  Remaining: `modes`, `blocks`, `determinism`,
+  clock, nonsense frame counts, `digest()`),
+  `modes` (the registry table: ids, `SINGLE_MODES` excluding the versus entry, the
+  rules-screen print order, which modes own a `TIME UP` label, the family strings
+  and `showLines` as one table; then per mode only what that mode can produce —
+  ASCENT's `goalBase`, FUSION's star row and its three-garbage opening row and the
+  level-up-on-star-clear rule, RUSH's quota-then-clock and the clamped readout,
+  DASH's fixed 40, BLITZ's 120 s and its never-wins rule, ENDLESS's garbage ramp
+  `12 → 3 s` and the `NEXT` countdown, and the level ladder each line-driven mode
+  promises with its own `LINES_PER_LEVEL`), and `duel` (the attack table
+  `attackFor`, one shared bag for both sides, the three HUD rows, a two-line clear
+  sending one row and a perfect clear two, the receiver's `garbage` surfacing on
+  the *next* drain because the wrapper routes attacks after both cores advanced,
+  no win from clearing, the winner read only from a top-out, and pause never
+  reviving a lost side).
+  Remaining: `blocks`, `determinism`,
   `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
@@ -190,6 +224,13 @@ everything else, including the deliverable list.
   **empty**, because a piece lands on any debris and then misses the floor row —
   and a one-row clear leaves the clearing piece's own upper cells in the floor row,
   so two `completeFloor` calls in a row need `emptyBoard` between them.
+  A `completeFloor(s, rows)` with `rows > 1` is a harder request than it looks:
+  the helper walls the piece in with filled rows, so the drop only reaches the
+  floor when **every** column the piece occupies covers all `rows` of them — the
+  square and the standing line are the only shapes that qualify for two. The mode
+  suite therefore calls `awaitBandPiece(s, rows)` first, which rotates and (since
+  no rotation of an S can become a square) redraws until such a piece shows up;
+  the redraws cost no lines because the field is wiped before each drop.
 * Incoming-row semantics (`insertRows`, shared by garbage and a mode's own bottom
   rows): `pushBottomRow` only counts an overflow when row 0 was already occupied
   *before* the shift, so pushing exactly `board.rows` rows onto an empty field fills
@@ -236,12 +277,14 @@ everything else, including the deliverable list.
    contract by `session.test.ts`); remaining test file: `determinism`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
-   unlocks, high scores, reset-with-confirmation). **Written**; ASCENT is covered
-   by `levels.test.ts`, the other five single-player modes, DUEL and
-   `persistence`/`bindings` tests are still owed, and persistence has
-   never run against a browser `localStorage`.
-3. Modes: 6 single-player + DUEL, each its own rules module + tests. **Written**,
-   **untested** (`modes.test.ts` still owed; `linked-blocks` has no coverage yet).
+   unlocks, high scores, reset-with-confirmation). **Written**; the session core
+   is pinned by `session.test.ts`, all six single-player modes by
+   `modes.test.ts` (including `linked-blocks`, i.e. FUSION) and the versus
+   wrapper by `duel.test.ts`. Still owed: `persistence` and `bindings` tests,
+   and persistence has never run against a browser `localStorage`.
+3. Modes: 6 single-player + DUEL, each its own rules module + tests. **Written
+   and tested**; the module contract and every mode-specific rule are pinned, and
+   the suite was mutation-checked as described in § 3.
 4. UI: scene/menus state machine with mouse hit-testing, options, bindings
    editor, rules screens, results, pause.
 5. Render (own 5×7 pixel font, procedural art), audio (WebAudio synth, original
