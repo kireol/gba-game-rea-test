@@ -63,7 +63,8 @@ everything else, including the deliverable list.
   had actually been installed before that.
 * Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
   `1ca7338` → `d15e1fd` → `10f1252` → `8a5609a` (incoming-rows lift fixes +
-  `lines.test.ts`) → this commit (`timings` + `levels` suites, two fixes below).
+  `lines.test.ts`) → `f864f81` (`timings` + `levels` suites, two fixes below) →
+  this commit (`session.test.ts`).
   ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
@@ -81,11 +82,11 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **122 passed / 122** in
-  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels}.test.ts`
-  + `helpers.ts` (`npx vitest run`, 465 ms; `npx tsc --noEmit` clean). `board`,
+* Rules-layer tests running green: **143 passed / 143** in
+  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session}.test.ts`
+  + `helpers.ts` (`npx vitest run`, 513 ms; `npx tsc --noEmit` clean). `board`,
   `pieces`, `random`, `scoring` were committed in `fd83195` and `1ca7338`,
-  `movement` in `10f1252`, `lines` in `8a5609a`.
+  `movement` in `10f1252`, `lines` in `8a5609a`, `timings`/`levels` in `f864f81`.
 * **Six** rules bugs found by these suites and fixed, each verified by a mutation
   check (breaking the fix fails exactly those tests and nothing else) — five in
   `src/gameplay/session.ts`, one in `src/modes/goal-ladder.ts`:
@@ -112,6 +113,15 @@ everything else, including the deliverable list.
     clear left `intoLevel` at zero and the HUD asked for a whole fresh goal
     (`GOAL 10`) on a run the player had just finished. `left()` now reports no
     remaining lines once the ladder is won; the goal bookkeeping is untouched.
+* **Mutation check of the session suite** (`src/tests/session.test.ts`, 20 tests):
+  11 single-line edits to `src/gameplay/session.ts`, 10 killed by exactly the
+  tests that own that behaviour (two of them by `lines`/`timings`, which is right
+  — the freeze countdown and the zero-freeze commit belong to those suites), and
+  one survivor recorded in § 4. The first pass found that the "never un-ends it"
+  test did **not** exercise the terminal guard in `setStatusDirect`: with the guard
+  deleted the whole suite stayed green, because `step()`'s top-of-frame
+  `status !== 'playing'` return stops everything before the guard is ever reached.
+  The two lock-driven tests now in the file are what make that guard load-bearing.
 
 ## 4. In progress
 
@@ -126,8 +136,17 @@ everything else, including the deliverable list.
   freeze-off commit, frame/second/HUD clock), `levels` (ASCENT: starting goal,
   countdown, level-up on the goal line, leftover carry-over, one piece climbing
   several levels, no double climb, victory at `maxLevel`, clock frozen after the
-  win).
-  Remaining: `session`, `modes`, `blocks`, `determinism`,
+  win), `session` (the opening batch and construction order, the state a fresh run
+  reports, one bag for active + queue, queue refill, queue copied / board shared,
+  `advance(0)` drains, hook order `createRun → setupBoard → onLock → extendClear →
+  onClear`, `extendClear` widening a clear and the `extended` count reported back,
+  the live `ModeApi` a hook receives, `setLevel` + `setStatus` from a hook, a
+  mode-reported verdict and its finality, the first verdict winning, a
+  lock-driven verdict landing in its own frame, mode-emitted events passing
+  through, `pushRow` silent vs `addGarbage` announced, HUD rows and goal passed to
+  the renderer, one `advance(1)` per frame and none after the run ends, the pause
+  clock, nonsense frame counts, `digest()`).
+  Remaining: `modes`, `blocks`, `determinism`,
   `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
@@ -144,6 +163,13 @@ everything else, including the deliverable list.
   pre-mutation state must copy the scalars out first. `cellsOf(piece, rot, ox, oy)`
   takes *relative* offsets and already adds `piece.x/y` — passing the piece's own
   column as `ox` doubles it and reads the wrong cells.
+  A mode can end a run through **two** channels — `run.status()` and
+  `api.setStatus()` — and `step()` polls `status()` twice per frame (once after
+  `advance`, once after gravity/lock). The *first* verdict of a frame wins, because
+  `setStatusDirect` refuses to leave `won`/`lost`. That guard is only reachable
+  from a **gravity**-driven lock: a hard drop locks inside `input()`, so that frame
+  never reaches the bottom poll. Hence the two lock-driven session tests fall at
+  `gravityTable: [1]` instead of hard-dropping.
   Movement tests stay piece-agnostic: at rotation 0 every shape touches both box
   walls, so the occupied span equals `BOX[id]`, which gives the wall clamp
   (`cols - boxWidth`) and the empty-field projection (`rows - boxHeight`) for
@@ -184,6 +210,15 @@ everything else, including the deliverable list.
   (`events()` as a property, `pushRow(cell, holes: COUNT)` argument order,
   `clearScore` shape, `ghost: number | null`, T spawning nub-down). Fix both in
   the docs pass.
+* **One surviving mutant, on purpose:** `lockPiece` ends the run when `place`
+  reports cells cut off above row 0 (`above > 0`), and deleting that arm changed no
+  test. It is unreachable through the session's own inputs — spawn and hold both
+  check `isTopOut`, and the incoming-row lift is bounded by `lift <= top` — so an
+  active piece can never have a cell above row 0 at the moment it locks. `place`'s
+  contract is pinned where it *is* reachable
+  (`board.test.ts > placing > writes the piece colour and reports cells left above
+  the field`); the session arm stays as defensive depth rather than a test that
+  has to fake an impossible board.
 * Then: `src/ui` (scenes + options + bindings screens), `src/render` (palette,
   procedural blocks, 5×7 font, renderer), `src/audio`, `src/app` (main, loop,
   input, layout), `vite.config.ts`, `playwright.config.ts`.
@@ -197,8 +232,8 @@ everything else, including the deliverable list.
 
 1. Engine + tests: board, pieces, collision/rotation (no kicks), gravity/lock,
    line clear, seeded 7-bag, ghost, hold. **Written and tested** (gravity/lock/
-   spawn/freeze timings now pinned by `timings.test.ts`); remaining test files:
-   `session`, `determinism`.
+   spawn/freeze timings pinned by `timings.test.ts`, the state machine and mode
+   contract by `session.test.ts`); remaining test file: `determinism`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
    unlocks, high scores, reset-with-confirmation). **Written**; ASCENT is covered
