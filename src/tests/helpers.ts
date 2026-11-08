@@ -33,21 +33,27 @@ export const makeSession = (
   difficulty: Difficulty = 2,
 ): Session => createSession({ mode, seed, config: configWith(over), difficulty });
 
-export const press = (s: Session, intent: Intent, frames = 0): void => {
+/**
+ * `advance()` drains the queue even for a zero-frame step, and an intent that is
+ * applied on the key-down (`hard-drop`, `rotate`, `hold`, the first `left`) emits
+ * inside `input()`. So every helper that touches `input()` has to hand the drained
+ * events back or the caller loses them.
+ */
+export const press = (s: Session, intent: Intent, frames = 0): SessionEvent[] => {
   s.input(intent, true);
-  s.advance(frames);
+  return s.advance(frames);
 };
 
-export const release = (s: Session, intent: Intent, frames = 0): void => {
+export const release = (s: Session, intent: Intent, frames = 0): SessionEvent[] => {
   s.input(intent, false);
-  s.advance(frames);
+  return s.advance(frames);
 };
 
 /** Taps an intent for one frame, then releases it. */
-export const tap = (s: Session, intent: Intent, frames = 1): void => {
-  press(s, intent, frames);
-  release(s, intent);
-};
+export const tap = (s: Session, intent: Intent, frames = 1): SessionEvent[] => [
+  ...press(s, intent, frames),
+  ...release(s, intent),
+];
 
 export const view = (s: Session): SessionView => s.snapshot();
 
@@ -119,53 +125,93 @@ export const emptyBoard = (board: Board): void => {
 };
 
 /**
- * Fills the floor row, opens exactly the cells the active piece will land in, then
- * hard-drops it so the row completes and clears. Needs a clear landing zone, so
- * callers that want exactly one cleared row should `emptyBoard` first.
+ * Completes the bottom `rows` rows with the piece that is currently active and
+ * returns everything it emitted, including the `lines` event (the helper waits out
+ * the clear freeze for you).
+ *
+ * The trick is that the piece may not be blocked on its way down: the rows are
+ * filled first, then exactly the cells the piece will land in are opened, so the
+ * column above each of them stays free. That keeps the landing position identical
+ * to the ghost projection on an empty board. `rows` therefore has to stay within
+ * the piece's own height — pass a line piece rotated vertically for four.
  */
-export const completeFloor = (s: Session): SessionEvent[] => {
+export const completeFloor = (s: Session, rows = 1): SessionEvent[] => {
   const snapshot = view(s);
   const piece = snapshot.active;
   if (!piece) throw new Error('completeFloor: no active piece');
-  const floor = snapshot.board.rows - 1;
+  const height = boxHeight(piece);
+  const count = Math.max(1, Math.min(rows, height));
   const landing = cellsOf(piece, piece.rot, 0, ghostY(snapshot.board, piece) - piece.y);
-  if (!landing.some((cell) => cell.y === floor)) {
+  const lowest = Math.max(...landing.map((cell) => cell.y));
+  if (lowest !== snapshot.board.rows - 1) {
     throw new Error('completeFloor: the active piece does not reach the floor row');
   }
-  fillRow(snapshot.board, floor);
-  for (const cell of landing) {
-    if (cell.y === floor) poke(snapshot.board, cell.x, cell.y, EMPTY);
+  for (let y = snapshot.board.rows - count; y < snapshot.board.rows; y += 1) fillRow(snapshot.board, y);
+  for (const cell of landing) poke(snapshot.board, cell.x, cell.y, EMPTY);
+  const collected = hardDrop(s);
+  const freeze = view(s).flash;
+  // `advance()` returns (and thereby drains) the batch it stepped through, so its
+  // result is the only place these events exist; `events()` afterwards is empty.
+  if (freeze > 0) collected.push(...s.advance(freeze));
+  // The next piece only enters after the spawn delay, and callers may want to
+  // clear again right away, so wait for it here too.
+  for (let guard = 0; guard < 120 && !view(s).active; guard += 1) {
+    collected.push(...s.advance(1));
   }
-  hardDrop(s);
-  return s.events();
+  return collected;
 };
 
 /** Drops the active piece onto the floor without completing a row. */
-export const dropToFloor = (s: Session): SessionEvent[] => {
-  hardDrop(s);
-  return s.events();
+export const dropToFloor = (s: Session): SessionEvent[] => hardDrop(s);
+
+/**
+ * Waits out the spawn delay after a lock, so the caller can act on the piece that
+ * follows. A lock clears `active` immediately but the next piece only arrives
+ * after `spawnDelayFrames`, which zero-frame input helpers never advance through.
+ */
+export const awaitActive = (s: Session, cap = 120): SessionEvent[] => {
+  const events: SessionEvent[] = [];
+  for (let guard = 0; guard < cap && !view(s).active; guard += 1) {
+    events.push(...s.advance(1));
+  }
+  if (!view(s).active) {
+    throw new Error(`awaitActive: no piece spawned within ${cap} frames (status ${view(s).status})`);
+  }
+  return events;
 };
 
 /** Box rows the piece actually occupies in its current rotation (1 for a flat line). */
 export const boxHeight = (piece: ActivePiece): number =>
   Math.max(...cellsOf(piece).map((cell) => cell.y)) - piece.y + 1;
 
-/** Drops the active piece straight down. */
-export const hardDrop = (s: Session): void => {
-  press(s, 'hard-drop');
-  release(s, 'hard-drop');
+/** Drops the active piece straight down, returning everything it emitted. */
+export const hardDrop = (s: Session): SessionEvent[] => [
+  ...press(s, 'hard-drop'),
+  ...release(s, 'hard-drop'),
+];
+
+/**
+ * Moves the piece one column per tap, without advancing a single frame: the move
+ * happens on key-down and `dasFrames` never elapses, so the piece lands exactly
+ * where the caller asked and the frame counters in timing tests stay meaningful.
+ */
+export const steer = (s: Session, column: number): SessionEvent[] => {
+  const events: SessionEvent[] = [];
+  for (let guard = 0; activeX(s) !== column; guard += 1) {
+    if (guard > 32 || !view(s).active) {
+      throw new Error(`steer: cannot reach column ${column}`);
+    }
+    const step: Intent = column < activeX(s) ? 'left' : 'right';
+    events.push(...tap(s, step, 0));
+  }
+  return events;
 };
 
 /** Moves the piece to a column, then drops it. Assumes the path is clear. */
-export const dropAt = (s: Session, column: number): void => {
-  const current = activeX(s);
-  const step = column < current ? 'left' : 'right';
-  for (let i = 0; i < Math.abs(column - current); i += 1) {
-    press(s, step as Intent);
-    release(s, step as Intent);
-  }
-  hardDrop(s);
-};
+export const dropAt = (s: Session, column: number): SessionEvent[] => [
+  ...steer(s, column),
+  ...hardDrop(s),
+];
 
 /**
  * Smallest seed whose first bag piece is `want`, so a test can name the piece it
