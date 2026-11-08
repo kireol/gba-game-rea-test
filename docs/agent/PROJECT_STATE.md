@@ -16,9 +16,10 @@ everything else, including the deliverable list.
 **Phase now:** the game is playable and documented (milestone report
 `docs/agent/MILESTONE-2026-11-08.md`, committed `fb3ffdf`); the open work is
 *coverage of the presentation layer*, in the order `TODO.md` § 1 sets out —
-`loop.ts` **done** (`src/tests/loop.test.ts`, 16 tests), `bindings.ts` **done**
-(`src/tests/bindings.test.ts`, 18 tests) — so the next file is `input.ts`, then
-`scenes.ts` screen by screen → widgets/renderer/audio, plus the font-table test
+`layout.ts`, `loop.ts`, `bindings.ts` and `render/blocks.ts` **done**, and
+`input.ts` **done** too (`src/tests/input.test.ts`, 24 tests, jsdom, 2026-11-08) —
+so the next file is `scenes.ts`, screen by screen, then render/font and audio,
+plus the font-table test
 (`TODO.md` § 2) and the second music loop (`TODO.md` § 3, the only brief
 requirement known to be unmet).
 
@@ -280,13 +281,17 @@ requirement known to be unmet).
 * Git: nothing was committed while the presentation layer was being written; the
   last commit before this save is `35f4be1` ("test: pin the save layer against
   hostile payloads and a hostile browser").
-* **First two presentation-layer unit files, chosen because both are pure enough
-  to test without a DOM** (`TODO.md` § 1 items 1 and 3):
-  `src/tests/loop.test.ts` (16 tests) and `src/tests/bindings.test.ts` (18 tests).
-  Verified 2026-11-08, after these files landed: `npm test` → **282 passed / 282**
-  across **17 files**; `npm run build` → **BUILD_EXIT=0** (35 modules, 68.49 kB
-  gzip 24.62 kB); `npm run test:e2e` → **7 passed (24.0 s)**; `npm run report` →
-  **PASS — no blocking hits**, **91 files** scanned, 3 acknowledged.
+* **Presentation-layer unit files so far** (`TODO.md` § 1):
+  `src/tests/layout.test.ts` (14 tests), `src/tests/loop.test.ts` (16),
+  `src/tests/bindings.test.ts` (18), `src/tests/blocks.test.ts` (8) and
+  `src/tests/input.test.ts` (24, added 2026-11-08 — the first of them that needs a
+  DOM, and gets it from jsdom rather than a browser).
+  Verified 2026-11-08, after all of them landed: `npm test` → **306 passed / 306**
+  across **18 files**; `npm run build` → **BUILD_EXIT=0** (35 modules, 68.49 kB
+  gzip 24.62 kB — the unit tests are not in the bundle); `npm run test:e2e` →
+  **7 passed (23.4 s)**; `npm run report` → **PASS — no blocking hits**,
+  **92 files** scanned, 3 acknowledged. The sweep scans Markdown too, so a doc
+  edit needs the gate re-run like any other change.
   * `loop.test.ts` owns both halves of the clock (an injected `now` plus a hand-pumped
     scheduler), so nothing waits and no DOM is needed. It pins: no debt for time that
     passed before the first frame; whole steps handed on with the remainder banked;
@@ -319,6 +324,36 @@ requirement known to be unmet).
     allowed: `readonly string[]` rows cannot be `push`ed (assert reference-inequality
     instead), and `exactOptionalPropertyTypes` forbids passing `maxCatchUp: undefined`
     explicitly (spread it in only when set). A green `npm test` is not a green build.
+  * `input.test.ts` is the first unit file that tests the *browser contract*: every
+    helper returns `event.defaultPrevented`, so each intent is pinned next to the
+    prevention that belongs to it. It covers the bound-key dispatch, the bindings
+    being re-read on every event (a rebind lands on the next press), `SWALLOWED`
+    eating unbound `Space`/`NumpadEnter` while `Tab` and `` ` `` stay live for the
+    shell, `event.repeat` never forwarded but still swallowed, `Ctrl`/`Cmd` chords
+    returning before `raw()` is even consulted, `Alt+Enter`/`F11` → fullscreen while
+    `Alt`+arrow still plays, a screen capturing a code before the bindings (both
+    directions, including the release when the capture ends mid-hold), `Escape` +
+    `Backspace` pressing BACK once, the wheel's press+release pair and its deadzone,
+    hover once per framebuffer point and never during a drag, blur / hidden tab →
+    `onFocusLost`, and `dispose()` detaching all nine listeners.
+  * Four jsdom facts, one debugging pass each, worth reusing: `preventDefault` is a
+    **no-op on a non-cancelable event**, so a constructed `KeyboardEvent` needs
+    `cancelable: true` or every prevention assertion is silently false;
+    `dispatchEvent` dispatches on the event's internal type, so overriding `type`
+    with `defineProperty` does **not** retarget listeners — construct with the right
+    type; jsdom's `PointerEvent` is not relied on (the handlers read only
+    `clientX/clientY/buttons/button`, so a `MouseEvent` dispatched under a `pointer*`
+    type name is enough); `document.visibilityState` is overridden with a
+    configurable getter and restored by deleting the own property. Every listener is
+    detached in `afterEach`, because a leaked window listener lets one test answer
+    another's events.
+  * Three of its first-run expectations were mine, not the code's, and all three
+    were one trap: I read `Enter` as CONFIRM. `intentForCode` walks
+    `BINDABLE_INTENTS` in declaration order, `pause` is claimed before `confirm`,
+    so with the shipped table `Enter` is PAUSE and `KeyZ` is ROTATE CCW — both of
+    `confirm`'s codes are shadowed. § 6 records what that costs in versus;
+    `TODO.md` § 1 item 4 (`scenes-*.test.ts`) must drive menus with the cursor, not
+    with `Enter`.
 
 ## 4. In progress
 
@@ -522,16 +557,18 @@ requirement known to be unmet).
      accumulator, `maxCatchUp` dropping work instead of spiralling, injected clock +
      injected scheduler (no `requestAnimationFrame` in the test). See § 3 for what it
      pins and the float detail.
-  2. `src/app/input.ts` — `SWALLOWED` key set, `event.repeat` dropped, P1/P2
-     dispatch, right/middle button and wheel mapping with its deadzone, blur and
-     visibility handling, `preventDefault` not eating the page. **← next**
+  2. **Done 2026-11-08** — `src/app/input.ts` (`src/tests/input.test.ts`, 24 tests,
+     jsdom): `SWALLOWED` key set, `event.repeat` dropped, P1/P2 dispatch, key
+     capture ahead of the bindings, right/middle button and wheel mapping with its
+     deadzone, blur and visibility handling, `preventDefault` not eating the page.
+     What it turned up is in § 6.
   3. `src/ui/scenes.ts` navigation through a stub `SceneHost` — the biggest
      untested surface and the one the brief cares about: title's 3 rows →
      modes/scores/options, a locked mode refusing with `rotate-fail` + `LOCKED`
      banner instead of navigating, `startRun` seeding from `lastSeed` vs
      `randomSeed`, countdown withholding frames, options cycling feeding
      `configFor`, the bindings capture/rebind/unbind flow, reset-progress needing
-     confirmation, the duel pause list.
+     confirmation, the duel pause list. **← next**
   4. `src/ui/widgets.ts` (`rowUnderPoint`, `menuRects`, `addField`),
      `src/ui/options.ts`, `src/ui/format.ts` (`mmss`, score padding).
   5. **Done 2026-11-08** — `src/engine/bindings.ts` (`normalizeBindings`, `rebind`,
@@ -616,20 +653,23 @@ requirement known to be unmet).
    test). `toggleFullscreen` is only proven not to throw where the API is missing;
    a real fullscreen transition is untested. Font/art/audio have no tests.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
-   tests. **282 unit tests across 17 files, all green. Browser: 7 Playwright
+   tests. **306 unit tests across 18 files, all green. Browser: 7 Playwright
    tests green** on "Chrome Headless Shell 158.0.8127.18" (already installed, no
-   `playwright install` needed). Of the 282, 252 are rules/gameplay, 14 are the
-   `layout.ts` framebuffer scaling, 15 are `loop.ts`; `bindings.ts` landed here.
-   Still open inside this item: the presentation-layer unit tests in § 4
-   (`input.ts` next, then `scenes.ts`), `src/gameplay/assets.ts`, and a Playwright
-   assertion for the real `localStorage` round-trip (the persistence suite covers
-   that with a double only, so item 2's browser-storage caveat still stands).
+   `playwright install` needed). Of the 306, **244 are rules/engine/gameplay**
+   (including `bindings.ts` 18 and `persistence.ts` 26) and 62 are not:
+   `render/blocks.ts` 8, `layout.ts` 14 (the framebuffer scaling), `loop.ts` 16,
+   `input.ts` 24. Still open inside this item: the presentation-layer unit tests
+   in § 4 (`scenes.ts` next, then render/font and audio), `src/gameplay/assets.ts`,
+   and a Playwright assertion for the real `localStorage` round-trip (the
+   persistence suite covers that with a double only, so item 2's browser-storage
+   caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
    `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
-   green on 2026-11-08** (latest run, after the two new test files, `/tmp/i_*.txt`):
+   green on 2026-11-08** (latest run, after `input.test.ts` and the doc sync that
+   came with it, `/tmp/n_*.txt`):
    build/typecheck `BUILD_EXIT=0` (35 modules, 68.49 kB / 24.62 kB gzip); vitest
-   `282 passed (282)` in 17 files; Playwright `7 passed (24.0s)`; sweep
-   `PASS — no blocking hits`, 91 files, 3 acknowledged. Re-run all five after any
+   `306 passed (306)` in 18 files; Playwright `7 passed (23.4s)`; sweep
+   `PASS — no blocking hits`, 92 files, 3 acknowledged. Re-run all five after any
    change — `build` runs `typecheck` first, and `test:e2e`'s webServer runs `build`,
    so one type error anywhere under `src/` or `tests/` breaks the browser suite too.
    Vitest itself does **not** typecheck: a green `npm test` can still hide a build
@@ -734,13 +774,54 @@ user, since the tests assert the current shape deliberately.
   `rebind(DEFAULT, 'hold', 'KeyC', 0)` → `['KeyC']`, and `ShiftRight` is gone.
   **Reachable** from the key-bindings screen; the row keeps a working key, so the
   loss is an alias, not the control.
-* **`KeyZ` belongs to both players at once** in the shipped defaults (P1 ROTATE
-  CCW, P2 CONFIRM), next to the deliberately shared `Enter` / `Escape`. In DUEL a
-  keypress is dispatched through both maps, so P1's rotate-ccw also confirms P2's
-  menu. The user cannot fix it, because P2's table is not editable.
+* **Player two can never receive a CONFIRM *press* through the shipped tables.**
+  Its only CONFIRM codes are `Enter` and `KeyZ`, and both are claimed earlier
+  inside `intentForCode`'s declaration order by player one's rows (`Enter` → P1
+  PAUSE, `KeyZ` → P1 ROTATE CCW), which `handleKey` asks first and returns on.
+  `release()` then dispatches player two's intent whenever it differs from player
+  one's, so the keyup sends player two a CONFIRM **release** for a press it never
+  got. Nothing breaks, for two reasons: outside a run the scene machine ignores
+  releases outright (`intent()` returns false when `!down`), and inside one
+  `confirm` is not among the play intents. And menus do not look at the player id,
+  so P2's `Enter` still confirms — through P1's PAUSE→CONFIRM remap, not through
+  P2's row. So `P2_BINDINGS.confirm` is dead code as shipped, and the user cannot
+  give player two a working CONFIRM code because that table is not editable.
+  (The earlier version of this bullet claimed a keypress is "dispatched through
+  both maps", which the code does not do — that is exactly what `input.test.ts`
+  now pins.) Reachable in every mode; pinned; **not fixed**, because who owns
+  `Enter` in versus is a design decision rather than a bug.
 * **`conflictsIn` reports a code repeated within one row** as a conflict against
   itself. Not reachable through the UI: `normalizeBindings` and `rebind` both
   de-duplicate a row before it can be saved.
+* **The mirror case of the bullet above is correct**: one code that resolves to the
+  *same* intent in both tables (`Escape` → BACK) releases once, for player one
+  only, because of the `p2 !== p1` guard in `release()`. Pinned, so a future
+  "fix" to the P2 path cannot silently break this.
+* **`SWALLOWED`'s comment and the shipped table disagree about `Escape`.** The
+  comment keeps it out "because the browser owns it in fullscreen", but `Escape` is
+  bound to BACK in both tables, so the handler `preventDefault`s it on the mapped
+  path anyway. A comment/code mismatch; the observable effect is browser-dependent
+  (a browser may still exit fullscreen whatever the page does), and a real
+  fullscreen transition is untested — `TODO.md` § 6.
+* **`onGesture()` fires on *every* non-chord keydown**, not "on the first key or
+  pointer event" as `InputHost` documents it. Harmless — the host is
+  `audio.unlock()`, which is idempotent — but the comment should not be trusted to
+  imply a once-only hook. Pinned.
+* **Hover dedupe packs the framebuffer point as `y * 1024 + x`**, so two points
+  alias if framebuffer x ever reaches 1024. Not reachable at the framebuffer in
+  use, let alone the field of play.
+* **No `pointercancel` or `lostpointercapture` handler exists** (grep over `src/`
+  finds neither), so an interrupted pointer can leave `rotate-ccw` or `hold`
+  pressed until that same button goes down and up again — `onFocusLost` pauses the
+  run but does not release held intents. Unverified on a real touch device.
+  `index.html:36` does set `touch-action: none`, so the deliberately
+  un-prevented left-button `pointerdown` cannot scroll the page.
+* **Two `TODO.md` claims about `input.ts` were wrong** and are corrected there: the
+  CSS→framebuffer division lives in `layout.toFramebuffer` (`input.ts` only forwards
+  client coordinates to the host), and `preventDefault` for a mapped key is
+  unconditional, not "only outside the test harness" — the harness reads
+  `window.__orbit`, which `dispatch` fills, so swallowing is what lets the browser
+  suite prove the app owns the key.
 
 ## 7. Important files
 
@@ -763,5 +844,7 @@ user, since the tests assert the current shape deliberately.
 | `tests/e2e/playable.spec.ts` | the 7 browser tests; reads the app through `?test=1`, never screenshots |
 | `src/tests/layout.test.ts` | jsdom docblock example + the framebuffer scaling tests |
 | `src/tests/loop.test.ts` | the fixed-timestep loop, driven by an injected clock and a hand-pumped scheduler — no DOM, no waiting |
+| `src/app/input.ts` | browser events → intents: key mapping and capture, `SWALLOWED`, the `event.repeat` drop, pointer/wheel, focus |
 | `src/tests/bindings.test.ts` | the whole binding table: resolution order, conflicts, normalize/rebind/unbind |
+| `src/tests/input.test.ts` | jsdom: real events at the real listeners, pinning both the dispatched `Intent` and `defaultPrevented` |
 | `vite.config.ts` / `playwright.config.ts` | build (240×160 canvas app) / `webServer: npm run build` — hence the typecheck coupling |

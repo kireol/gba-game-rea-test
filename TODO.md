@@ -7,8 +7,8 @@ each item names the file it concerns and how its absence is currently papered ov
 `npm run test:e2e` 7 tests green; `npm run build` green; `npm run report` PASS.
 Nothing below is "in progress" unless it says so.
 
-**Updated 2026-11-08: § 1 items 1 and 3 are done.** New baseline **17 files / 282
-tests**, e2e 7 green, build green, sweep PASS over 91 files.
+**Updated 2026-11-08: § 1 items 1-3 are done.** New baseline **18 files / 306
+tests**, e2e 7 green, build green, sweep PASS over 92 files.
 
 ## 1. Unit coverage for the presentation layer
 
@@ -40,9 +40,16 @@ Order of work, cheapest-and-most-dangerous first:
    handle, a restart that re-bases without losing its counts, a throwing `onTick`
    leaving the next frame scheduled, and a 60 Hz group pinning how the rounding of
    `STEP_MS = 1000/60` shows up.
-2. `src/tests/input.test.ts` **← next** — `SWALLOWED` codes, `preventDefault` only
-   outside the test harness, wheel/right-click rotation, pointer coordinates divided
-   by the CSS scale.
+2. ~~`src/tests/input.test.ts`~~ **done.** jsdom docblock, and every helper returns
+   `event.defaultPrevented`, so each prevention is pinned beside the intent it
+   belongs to: `SWALLOWED` codes, `event.repeat` dropped but still swallowed, key
+   capture ahead of the bindings, wheel / right-click / middle-button mapping and
+   the wheel deadzone, hover dedupe, blur and visibility, `dispose()`. Two things
+   written here were wrong about the code, now fixed: `preventDefault` is **not**
+   conditional on the test harness (a mapped key is always eaten — the harness reads
+   `window.__orbit`, which `dispatch` fills), and `input.ts` does **not** divide
+   pointer coordinates by the CSS scale (that is `layout.toFramebuffer`, which
+   `input.ts` calls). What it found is in `docs/agent/PROJECT_STATE.md` § 6.
 3. ~~`src/tests/engine-bindings.test.ts`~~ **done as `src/tests/bindings.test.ts`**
    (no `engine-` prefix — no other test file carries one). `rebind` steals the key
    from the previous owner, `unbind` falls back to the default, `normalizeBindings`
@@ -88,10 +95,11 @@ settings intact.
 
 ## 5. Rules-layer mutation campaign
 
-The rules layer has 248 tests and has never been mutation-tested. Run a campaign
+The rules and engine layer holds 244 of the 306 tests and has never been
+mutation-tested. Run a campaign
 (`Stryker`, or a scripted kill list against the timing/goal/garbage branches) and
 fix surviving mutants instead of adding more tests. This is the cheapest way to
-find out which of the 248 tests actually carry weight.
+find out which of those 244 tests actually carry weight.
 
 ## 6. Real fullscreen
 

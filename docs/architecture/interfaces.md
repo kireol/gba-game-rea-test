@@ -148,7 +148,7 @@ original in the field comments and in `docs/game-design.md` § 2. `queueLength` 
 rules-visible (a deeper queue deals different pieces); `ghost` is the only purely
 cosmetic option, which is why it gets its own mutation test.
 
-### `src/engine/bindings.ts` **[—] owed test file**
+### `src/engine/bindings.ts` **[U `bindings.test.ts`, 18 tests]**
 
 ```ts
 type Bindings = Record<Intent, readonly string[]>       // keys are kebab-case intents
@@ -363,7 +363,9 @@ and the clear flash together). A scene emits one immutable `FrameModel` per fram
 the renderer knows nothing about modes, sessions or the DOM beyond its canvas,
 which is what lets a scene's output be asserted without a canvas.
 
-### `src/render/{palette,blocks,font5x7,renderer}.ts` **[—] / layout only via e2e**
+### `src/render/{palette,font5x7,renderer}.ts` **[—]** · `blocks.ts` **[U `blocks.test.ts`, 8 tests]**
+
+(`src/app/layout.ts` is not part of this section and has its own unit file; see § 6.)
 
 ```ts
 // palette.ts
@@ -479,7 +481,7 @@ Rules that the browser tests depend on and that are easy to break silently:
 ## Shell layer (`src/app`) — the only DOM/WebAudio code
 
 ```ts
-// loop.ts [—]
+// loop.ts [U `loop.test.ts`, 16 tests]
 const STEP_MS = 1000 / 60;  const MAX_CATCHUP = 4;
 interface LoopOpts { stepMs?; maxCatchUp?; now?: () => number;
                      schedule?: (cb: (time: number) => void) => number; unschedule?: (h) => void }
@@ -491,7 +493,7 @@ Backlog past `MAX_CATCHUP` steps is **dropped**, not run — an unhitched tab ca
 fast-forward a session. `now`/`schedule` are injectable so a test never waits.
 
 ```ts
-// input.ts [—]
+// input.ts [U `input.test.ts`, 24 tests]
 interface InputHost {
   readonly canvas: HTMLCanvasElement;
   bindings(): Bindings;                       // live view, so a rebind applies at once
@@ -507,8 +509,16 @@ attachInput(host: InputHost): Input
 `SWALLOWED` = `Space ArrowUp ArrowDown ArrowLeft ArrowRight Enter NumpadEnter
 Backspace` (prevents page scroll/chrome activation); `Tab` and `Escape` are
 deliberately not swallowed, the first for shell navigation and the second because
-the browser owns it in fullscreen. Wheel has a 4-unit deadzone; the right and
-middle buttons rotate. `event.repeat` is dropped so DAS stays in the rules layer.
+the browser owns it in fullscreen — though `Escape` is bound to BACK in both
+tables, so a mapped-key press still eats it before the browser sees it
+(`PROJECT_STATE.md` § 6). Wheel has a 4-unit deadzone and maps up → ROTATE CW,
+down → SOFT DROP, shift+wheel → HOLD, each as a press/release pair; the right
+button rotates counter-clockwise, the middle button holds, and a left-button
+press inside the field of play is a board tap. `event.repeat` is dropped so DAS
+stays in the rules layer. Inside one map a code resolves to the intent whose row
+comes first in `BINDABLE_INTENTS`, and player one's map is asked before player
+two's — so `Enter` is player one's PAUSE and player two never receives a CONFIRM
+press (§ 6).
 
 ```ts
 // layout.ts [U `layout.test.ts`, 14 tests]

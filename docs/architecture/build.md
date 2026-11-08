@@ -9,7 +9,7 @@
 | `npm run build` | `npm run typecheck` then `vite build` → `dist/` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` (strict; `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) |
-| `npm test` | Vitest — 17 unit files / 282 tests (node environment by default) |
+| `npm test` | Vitest — 18 unit files / 306 tests (node environment by default; `layout.test.ts` and `input.test.ts` opt into jsdom per file) |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:e2e` | Playwright browser suite (needs `npx playwright install chromium` once) |
 | `npm run test:all` | unit suite then browser suite |
@@ -55,13 +55,16 @@ extension (`import { … } from '../engine/types.js'`), which is what
   `src/engine` as of 2026-11-08: `src/engine/bindings.ts` is pinned by
   `src/tests/bindings.test.ts` (18 tests), having previously been untested apart
   from the round-trip its data gets in `src/tests/persistence.test.ts`. Three
-  pure islands elsewhere are covered: `src/app/loop.ts`
+  islands elsewhere are covered: `src/app/loop.ts`
   (`src/tests/loop.test.ts`, 16 tests, injected clock and scheduler),
-  `src/render/blocks.ts` (`src/tests/blocks.test.ts`, 8 tests) and the scaling
+  `src/app/input.ts` (`src/tests/input.test.ts`, 24 tests, jsdom — real DOM events
+  at the real listeners, asserting the dispatched `Intent` *and*
+  `event.defaultPrevented`), `src/render/blocks.ts` (`src/tests/blocks.test.ts`,
+  8 tests) and the scaling
   maths of `src/app/layout.ts` (`src/tests/layout.test.ts`, 14 tests, jsdom).
   Nothing in `src/ui` has a unit test.
 * `src/ui/scenes.ts`, `src/ui/options.ts`, `src/ui/widgets.ts`,
-  `src/app/{input,main}.ts` and `src/render/{renderer,font5x7}.ts` are exercised
+  `src/app/main.ts` and `src/render/{renderer,font5x7}.ts` are exercised
   **only** through the browser suite;
   `src/audio/engine.ts` is not exercised by any test at all, in Node or in the
   browser. That gap is tracked in `TODO.md`, and
