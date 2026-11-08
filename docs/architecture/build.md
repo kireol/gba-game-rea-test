@@ -51,15 +51,18 @@ extension (`import { … } from '../engine/types.js'`), which is what
 
 ## Test policy
 
-* Unit tests cover `src/gameplay` and `src/modes` completely, and `src/engine`
-  except `bindings.ts` — whose rebind/unbind/conflict rules are untested and whose
-  data is only round-tripped by `src/tests/persistence.test.ts`. Two pure islands
-  elsewhere are covered: `src/render/blocks.ts` (`src/tests/blocks.test.ts`, 8
-  tests) and the scaling maths of `src/app/layout.ts` (`src/tests/layout.test.ts`,
-  14 tests, jsdom). Nothing in `src/ui` has a unit test.
+* Unit tests cover `src/gameplay` and `src/modes` completely, and all of
+  `src/engine` as of 2026-11-08: `src/engine/bindings.ts` is pinned by
+  `src/tests/bindings.test.ts` (18 tests), having previously been untested apart
+  from the round-trip its data gets in `src/tests/persistence.test.ts`. Three
+  pure islands elsewhere are covered: `src/app/loop.ts`
+  (`src/tests/loop.test.ts`, 16 tests, injected clock and scheduler),
+  `src/render/blocks.ts` (`src/tests/blocks.test.ts`, 8 tests) and the scaling
+  maths of `src/app/layout.ts` (`src/tests/layout.test.ts`, 14 tests, jsdom).
+  Nothing in `src/ui` has a unit test.
 * `src/ui/scenes.ts`, `src/ui/options.ts`, `src/ui/widgets.ts`,
-  `src/app/{loop,input,main}.ts`, `src/render/{renderer,font5x7}.ts` and
-  `src/engine/bindings.ts` are exercised **only** through the browser suite;
+  `src/app/{input,main}.ts` and `src/render/{renderer,font5x7}.ts` are exercised
+  **only** through the browser suite;
   `src/audio/engine.ts` is not exercised by any test at all, in Node or in the
   browser. That gap is tracked in `TODO.md`, and
   `docs/architecture/interfaces.md` tags each module `[U]`/`[E]`/`[—]` so the gap is

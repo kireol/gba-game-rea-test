@@ -7,6 +7,9 @@ each item names the file it concerns and how its absence is currently papered ov
 `npm run test:e2e` 7 tests green; `npm run build` green; `npm run report` PASS.
 Nothing below is "in progress" unless it says so.
 
+**Updated 2026-11-08: § 1 items 1 and 3 are done.** New baseline **17 files / 282
+tests**, e2e 7 green, build green, sweep PASS over 91 files.
+
 ## 1. Unit coverage for the presentation layer
 
 The rules layer is pinned hard. These files have **no unit tests at all** — they
@@ -23,21 +26,28 @@ locks", not "the pause menu's fourth row is wrong":
 | `src/render/font5x7.ts` | 212 | see item 2 |
 | `src/ui/widgets.ts` | 189 | list/slider/clock geometry — a slider drag maps to the wrong value |
 | `src/render/renderer.ts` | 167 | FrameModel → canvas; scale and clipping |
-| `src/engine/bindings.ts` | 160 | rebind/unbind/conflict rules; pure data, so cheap to pin |
 | `src/app/main.ts` | 139 | composition only; leave it last |
-| `src/app/loop.ts` | 108 | accumulator and `MAX_CATCHUP`; a pure injected-clock design, so cheap to pin |
+
+Done since this list was written (both were pure enough to test without a DOM,
+which is why they went first): `src/app/loop.ts` → `src/tests/loop.test.ts`
+(16 tests), `src/engine/bindings.ts` → `src/tests/bindings.test.ts` (18 tests).
 
 Order of work, cheapest-and-most-dangerous first:
 
-1. `src/tests/loop.test.ts` — inject `now` and `requestFrame`; assert 0…4 steps,
-   backlog dropped past `MAX_CATCHUP`, pause → resume yields exactly one step, a
-   throwing `step` still reschedules.
-2. `src/tests/input.test.ts` — `SWALLOWED` codes, `preventDefault` only outside the
-   test harness, wheel/right-click rotation, pointer coordinates divided by the CSS
-   scale.
-3. `src/tests/engine-bindings.test.ts` — `rebind` steals the key from the previous
-   owner, `unbind` falls back to the default, `normalizeBindings` drops garbage
-   rows, `conflictsIn` sees both owners.
+1. ~~`src/tests/loop.test.ts`~~ **done.** Injected `now` plus a hand-pumped
+   scheduler, so nothing waits: whole steps with the remainder banked, backlog
+   dropped past `MAX_CATCHUP` rather than deferred, `stop()` cancelling the *live*
+   handle, a restart that re-bases without losing its counts, a throwing `onTick`
+   leaving the next frame scheduled, and a 60 Hz group pinning how the rounding of
+   `STEP_MS = 1000/60` shows up.
+2. `src/tests/input.test.ts` **← next** — `SWALLOWED` codes, `preventDefault` only
+   outside the test harness, wheel/right-click rotation, pointer coordinates divided
+   by the CSS scale.
+3. ~~`src/tests/engine-bindings.test.ts`~~ **done as `src/tests/bindings.test.ts`**
+   (no `engine-` prefix — no other test file carries one). `rebind` steals the key
+   from the previous owner, `unbind` falls back to the default, `normalizeBindings`
+   drops garbage rows, `conflictsIn` sees both owners — plus the four behaviours
+   `docs/agent/PROJECT_STATE.md` § 6 records from it.
 4. `src/tests/scenes-*.test.ts` — split by screen: title/modes/options/bindings/
    scores/confirm/pause, plus the countdown (4 × 45 withheld frames) and
    `debug().status`. The e2e suite already relies on `?test=1`'s contract; unit

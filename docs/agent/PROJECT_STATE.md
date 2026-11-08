@@ -13,6 +13,15 @@ runtime and no emulator core ships.
 Authoritative brief: `prompt.md` (user-supplied). Its licence section overrides
 everything else, including the deliverable list.
 
+**Phase now:** the game is playable and documented (milestone report
+`docs/agent/MILESTONE-2026-11-08.md`, committed `fb3ffdf`); the open work is
+*coverage of the presentation layer*, in the order `TODO.md` § 1 sets out —
+`loop.ts` **done** (`src/tests/loop.test.ts`, 16 tests), `bindings.ts` **done**
+(`src/tests/bindings.test.ts`, 18 tests) — so the next file is `input.ts`, then
+`scenes.ts` screen by screen → widgets/renderer/audio, plus the font-table test
+(`TODO.md` § 2) and the second music loop (`TODO.md` § 3, the only brief
+requirement known to be unmet).
+
 ## 2. Important architectural decisions
 
 * **Rules engine separate from rendering.** `src/engine/` (board, pieces,
@@ -271,6 +280,45 @@ everything else, including the deliverable list.
 * Git: nothing was committed while the presentation layer was being written; the
   last commit before this save is `35f4be1` ("test: pin the save layer against
   hostile payloads and a hostile browser").
+* **First two presentation-layer unit files, chosen because both are pure enough
+  to test without a DOM** (`TODO.md` § 1 items 1 and 3):
+  `src/tests/loop.test.ts` (16 tests) and `src/tests/bindings.test.ts` (18 tests).
+  Verified 2026-11-08, after these files landed: `npm test` → **282 passed / 282**
+  across **17 files**; `npm run build` → **BUILD_EXIT=0** (35 modules, 68.49 kB
+  gzip 24.62 kB); `npm run test:e2e` → **7 passed (24.0 s)**; `npm run report` →
+  **PASS — no blocking hits**, **91 files** scanned, 3 acknowledged.
+  * `loop.test.ts` owns both halves of the clock (an injected `now` plus a hand-pumped
+    scheduler), so nothing waits and no DOM is needed. It pins: no debt for time that
+    passed before the first frame; whole steps handed on with the remainder banked;
+    nothing delivered below one step; catch-up capped at `MAX_CATCHUP` and the leftover
+    backlog **dropped, not deferred**; `maxCatchUp: 0` floored to 1; the injected clock
+    preferred over the rAF stamp; a backwards clock jump re-basing instead of going
+    negative; `reset()` dropping debt; `stop()` unscheduling the **live** handle
+    (a frame re-schedules itself at entry, so the handle to cancel is the one the
+    last frame created, not the one `start()` made) and being idempotent; `steps` /
+    `ticks` counting for the loop's whole life across a restart.
+  * It also pins the float reality of the real step: `STEP_MS` is 1000/60 rounded
+    **up**, so a subtractive accumulator delivers 2 frames for `STEP_MS * 3` of
+    elapsed time and catches the third frame a millisecond later. The structural
+    tests therefore run at an exactly representable 10 ms step; only the 60 Hz group
+    uses the real constant, and it asserts intervals rather than exact counts.
+  * `bindings.test.ts` pins the 14 bindable intents and the runtime key set of all
+    three tables; first-claim resolution (`Enter` → PAUSE, `ArrowDown` → SOFT DROP);
+    `conflictsIn`'s exact output **including its order**, which follows a code's
+    first sighting, not the moment it collided; `normalizeBindings` dropping
+    non-array rows, empty rows, duplicates and junk entries while keeping a
+    partially valid save; `rebind` stealing a code from every other intent and
+    clamping the slot; `unbind` keeping aliases. All three tables are proven
+    un-mutated, and every returned row is proven to be a fresh array.
+  * Three of my first-run assertions were wrong about the code, not the code wrong:
+    P2's conflict order (`['KeyA','KeyD','KeyS','KeyW']`, first-sighting order), a
+    code repeated *within one row* (it IS reported, against itself — unreachable via
+    the UI since both loaders de-duplicate), and `decrement` keeping `ArrowLeft` when
+    `KeyZ` is stolen. Fixed in the tests; § 6 records the resulting known issues.
+  * Vitest does not typecheck. `npm run build` rejected two things the green tests
+    allowed: `readonly string[]` rows cannot be `push`ed (assert reference-inequality
+    instead), and `exactOptionalPropertyTypes` forbids passing `maxCatchUp: undefined`
+    explicitly (spread it in only when set). A green `npm test` is not a green build.
 
 ## 4. In progress
 
@@ -348,7 +396,9 @@ everything else, including the deliverable list.
   browser exposes `localStorage` the default store finds it (and a `localStorage` that
   throws on access still loads, with defaults and no corrupt flag); `pagehide` and
   `visibilitychange` are both registered and both flush).
-  Remaining: `bindings`, `assets`.
+  Remaining: `assets` (the module does not exist yet). `bindings` is covered from
+  both ends now — the round-trip above and the table itself in
+  `src/tests/bindings.test.ts`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
   and `input()` emits synchronously on key-down, so a helper that calls
@@ -464,15 +514,17 @@ everything else, including the deliverable list.
   the field`); the session arm stays as defensive depth rather than a test that
   has to fake an impossible board.
 * **Presentation layer: written and browser-verified, but almost entirely
-  un-unit-tested.** Nothing in `src/app`, `src/ui`, `src/render`, `src/audio` has a
-  Vitest file except `src/tests/layout.test.ts`. The e2e suite exercises them
+  un-unit-tested.** Two files of `src/app`/`src/ui`/`src/render`/`src/audio` now
+  have a Vitest file — `src/tests/layout.test.ts` and `src/tests/loop.test.ts` —
+  and `src/engine/bindings.ts` has its own. The e2e suite exercises the rest
   together, which is not the same as pinning them. Next, in this order:
-  1. `src/app/loop.ts` — fixed-step accumulator, `maxCatchUp` dropping work instead
-     of spiralling, injected clock + injected scheduler (no `requestAnimationFrame`
-     in the test).
+  1. **Done 2026-11-08** — `src/app/loop.ts` (`src/tests/loop.test.ts`): fixed-step
+     accumulator, `maxCatchUp` dropping work instead of spiralling, injected clock +
+     injected scheduler (no `requestAnimationFrame` in the test). See § 3 for what it
+     pins and the float detail.
   2. `src/app/input.ts` — `SWALLOWED` key set, `event.repeat` dropped, P1/P2
      dispatch, right/middle button and wheel mapping with its deadzone, blur and
-     visibility handling, `preventDefault` not eating the page.
+     visibility handling, `preventDefault` not eating the page. **← next**
   3. `src/ui/scenes.ts` navigation through a stub `SceneHost` — the biggest
      untested surface and the one the brief cares about: title's 3 rows →
      modes/scores/options, a locked mode refusing with `rotate-fail` + `LOCKED`
@@ -482,8 +534,9 @@ everything else, including the deliverable list.
      confirmation, the duel pause list.
   4. `src/ui/widgets.ts` (`rowUnderPoint`, `menuRects`, `addField`),
      `src/ui/options.ts`, `src/ui/format.ts` (`mmss`, score padding).
-  5. `src/engine/bindings.ts` (`normalizeBindings`, `rebind`, `unbind`,
-     `conflictsIn`, `intentForCode`, P2 variants) — still owed from § 5 item 2.
+  5. **Done 2026-11-08** — `src/engine/bindings.ts` (`normalizeBindings`, `rebind`,
+     `unbind`, `conflictsIn`, `intentForCode`, P2 variants) in
+     `src/tests/bindings.test.ts`; § 6 lists the four behaviours it surfaced.
   6. `src/gameplay/assets.ts` — **does not exist yet**; the brief's asset-safety
      requirement has no module of its own.
   7. Then a mutation campaign over the new layer, same discipline as § 3 (per-mutant
@@ -523,8 +576,11 @@ everything else, including the deliverable list.
   * `layout.test.ts` has **14** tests, not 13. `SfxName` has 17 entries, no `pause`.
   * The RE harness lives in `tools/re/*.py` + `scripts/{start-mgba,load-bridge}.sh`;
     there is no `scripts/mgba-lib.mjs` or `scripts/probe.mjs`.
-* Commit groups: engine+gameplay+modes → tests → render/audio/app/ui + configs +
-  index.html + e2e + layout tests → **README/TODO/CHANGELOG + docs pass (this one)**.
+* Commit groups: `cf75ac7`…`d15e1fd` tooling/docs/rules layer → `f864f81`…`35f4be1`
+  the test campaign → `4c29d08` render/audio/app/ui + configs + index.html + e2e +
+  layout tests → **`fb3ffdf` README/TODO/CHANGELOG/milestone report + the docs pass
+  above** (12 files, +1 472/−213, docs-only: no `src/` change, so the five gate
+  results recorded in § 3 still describe `main`). Nothing pushed.
 
 
 ## 5. Outstanding tasks
@@ -532,7 +588,10 @@ everything else, including the deliverable list.
 1. Engine + tests: board, pieces, collision/rotation (no kicks), gravity/lock,
    line clear, seeded 7-bag, ghost, hold. **Written and tested** (gravity/lock/
    spawn/freeze timings pinned by `timings.test.ts`, the state machine and mode
-   contract by `session.test.ts`). Remaining rules-layer test file: `bindings`.
+   contract by `session.test.ts`). `bindings.ts` — the last rules-layer module with
+   no test file of its own — landed 2026-11-08 (`src/tests/bindings.test.ts`).
+   `config.ts` still has no file of its own; `gravityFrames` and `DIFFICULTY_SPEED`
+   are pinned through `timings.test.ts`, `isDifficulty` is not pinned directly.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
    unlocks, high scores, reset-with-confirmation). **Written and tested**; the
@@ -542,33 +601,39 @@ everything else, including the deliverable list.
    check in § 3). Persistence runs against a `KeyValue` double and a shimmed
    `globalThis.localStorage`, including one that throws on access; the real
    browser-storage path still only lands with the Playwright pass (item 6).
-   Still owed: `bindings` tests.
+   The bindings it round-trips are now pinned at the table level too.
 3. Modes: 6 single-player + DUEL, each its own rules module + tests. **Written
    and tested**; the module contract and every mode-specific rule are pinned, and
    the suite was mutation-checked as described in § 3.
 4. UI: scene/menus state machine with mouse hit-testing, options, bindings
    editor, rules screens, results, pause. **Written, and driven end to end by the
-   browser suite; no unit tests of its own yet** — see § 4 items 3–4.
+   browser suite; no unit tests of its own yet** — see § 4 items 3–4. The bindings
+   *tables* the editor writes are now pinned (`bindings.test.ts`); the editor
+   screen itself is not.
 5. Render (own 5×7 pixel font, procedural art), audio (WebAudio synth, original
    material), fullscreen + responsive scaling with correct aspect. **Written and
    browser-verified for scaling** (`layout.test.ts` 14 tests + the e2e viewport
    test). `toggleFullscreen` is only proven not to throw where the API is missing;
    a real fullscreen transition is untested. Font/art/audio have no tests.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
-   tests. **Rules layer: 248 tests across 15 files, all green. Browser: 7 Playwright
+   tests. **282 unit tests across 17 files, all green. Browser: 7 Playwright
    tests green** on "Chrome Headless Shell 158.0.8127.18" (already installed, no
-   `playwright install` needed). Still open inside this item: the presentation-layer
-   unit tests in § 4, `bindings` tests, `src/gameplay/assets.ts`, and a Playwright
+   `playwright install` needed). Of the 282, 252 are rules/gameplay, 14 are the
+   `layout.ts` framebuffer scaling, 15 are `loop.ts`; `bindings.ts` landed here.
+   Still open inside this item: the presentation-layer unit tests in § 4
+   (`input.ts` next, then `scenes.ts`), `src/gameplay/assets.ts`, and a Playwright
    assertion for the real `localStorage` round-trip (the persistence suite covers
    that with a double only, so item 2's browser-storage caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
    `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
-   green on 2026-11-08** (re-run after the docs pass, `/tmp/f_*.txt`): build/typecheck
-   `BUILD_EXIT=0` (35 modules); vitest `248 passed (248)` in 15 files, 3.40 s;
-   Playwright `7 passed (23.6s)`; sweep `PASS — no blocking hits`, 89 files,
-   3 acknowledged. Re-run all five after any change — `build` runs `typecheck` first,
-   and `test:e2e`'s webServer runs `build`, so one type error anywhere under `src/`
-   or `tests/` breaks the browser suite too.
+   green on 2026-11-08** (latest run, after the two new test files, `/tmp/i_*.txt`):
+   build/typecheck `BUILD_EXIT=0` (35 modules, 68.49 kB / 24.62 kB gzip); vitest
+   `282 passed (282)` in 17 files; Playwright `7 passed (24.0s)`; sweep
+   `PASS — no blocking hits`, 91 files, 3 acknowledged. Re-run all five after any
+   change — `build` runs `typecheck` first, and `test:e2e`'s webServer runs `build`,
+   so one type error anywhere under `src/` or `tests/` breaks the browser suite too.
+   Vitest itself does **not** typecheck: a green `npm test` can still hide a build
+   break (§ 3), so never report the unit gate alone.
 8. `README.md`, `TODO.md`, `CHANGELOG.md`, milestone report (§ 14 of the brief:
    completed / reverse-engineered / remaining / discrepancies / test results / next
    steps). **Written 2026-11-08**: repo-root `README.md`, `TODO.md`, `CHANGELOG.md`
@@ -653,6 +718,30 @@ everything else, including the deliverable list.
     reference ROM path must never appear in project-authored text (`.gba` outside
     the two acknowledged paths is a sweep hit).
 
+**Found while pinning `src/engine/bindings.ts` (2026-11-08).** All four are
+behaviour the new tests now lock down, so they are recorded decisions rather than
+surprises; none is game-breaking, and none should be "fixed" without asking the
+user, since the tests assert the current shape deliberately.
+
+* **`unbind` falls back to the default table, not to the table it was given.**
+  Unbinding the last key of a player-two intent therefore hands player two player
+  one's key (`unbind(P2, 'left', 'KeyA').left` → `['ArrowLeft']`). **Unreachable
+  today**: the key-bindings screen edits player one only. The day P2 becomes
+  editable this needs a base-aware fallback.
+* **`rebind` can collapse a row that has two aliases.** Recording a code that
+  already lives in another slot of the same row overwrites that slot with a
+  duplicate, and the de-duplicating pass then drops the alias:
+  `rebind(DEFAULT, 'hold', 'KeyC', 0)` → `['KeyC']`, and `ShiftRight` is gone.
+  **Reachable** from the key-bindings screen; the row keeps a working key, so the
+  loss is an alias, not the control.
+* **`KeyZ` belongs to both players at once** in the shipped defaults (P1 ROTATE
+  CCW, P2 CONFIRM), next to the deliberately shared `Enter` / `Escape`. In DUEL a
+  keypress is dispatched through both maps, so P1's rotate-ccw also confirms P2's
+  menu. The user cannot fix it, because P2's table is not editable.
+* **`conflictsIn` reports a code repeated within one row** as a conflict against
+  itself. Not reachable through the UI: `normalizeBindings` and `rebind` both
+  de-duplicate a row before it can be saved.
+
 ## 7. Important files
 
 | File | Purpose |
@@ -669,7 +758,10 @@ everything else, including the deliverable list.
 | `src/ui/scenes.ts` | every screen, the menu cursor, `pointer()`, `activate()`, and `debug()` — the largest file and the least tested |
 | `src/app/main.ts` | composition root; publishes `window.__orbit` only when the URL has `?test=1` |
 | `src/app/layout.ts` | the only place window size touches the game; `computeScale`, `toFramebuffer` |
+| `src/app/loop.ts` | wall-clock → rules frames: `STEP_MS`, `MAX_CATCHUP`, the injectable clock/scheduler |
 | `src/render/frame.ts` | the frame model the renderer draws and the e2e tests assert against |
 | `tests/e2e/playable.spec.ts` | the 7 browser tests; reads the app through `?test=1`, never screenshots |
-| `src/tests/layout.test.ts` | jsdom docblock example + the only presentation-layer unit tests |
+| `src/tests/layout.test.ts` | jsdom docblock example + the framebuffer scaling tests |
+| `src/tests/loop.test.ts` | the fixed-timestep loop, driven by an injected clock and a hand-pumped scheduler — no DOM, no waiting |
+| `src/tests/bindings.test.ts` | the whole binding table: resolution order, conflicts, normalize/rebind/unbind |
 | `vite.config.ts` / `playwright.config.ts` | build (240×160 canvas app) / `webServer: npm run build` — hence the typecheck coupling |
