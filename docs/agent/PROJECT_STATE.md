@@ -58,22 +58,61 @@ everything else, including the deliverable list.
   `tools/re/rom_header.py` verified: 4 MiB, SHA-256
   `87a857de…cf5ed2a`, CRC-32 `7b729804`, header checksum stored==computed
   (`0xFB` @ `0x0BD`), entropy 5.576 bits/byte.
-* Toolchain: node v26.13.0 / npm 11.20.0; `npm install` completed (67 packages).
-* Git: branch `main`, history `cf75ac7` → `e355664`. ROM and reference
-  screenshots are gitignored (`rom/`,
+* Toolchain: node v26.13.0 / npm 11.20.0; `npm install` re-run and completed
+  (91 packages) on 2026-11-07 — an earlier `node_modules` was absent, so nothing
+  had actually been installed before that.
+* Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
+  `1ca7338`. ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
   `$1` / `$REFERENCE_ROM` / first `rom/*.gba`).
+* Docs batch (`docs/architecture/*`, `docs/game-design.md`,
+  `docs/asset-provenance.md`) — written; `decisions.md`, `asset-provenance.md`
+  and `game-design.md` are still **untracked**, `PROJECT_STATE.md` modified.
+* `scripts/forbidden-name-sweep.mjs` → `npm run report`: **PASS**. It now excludes
+  itself from the scan (its rule table contains every forbidden string, which is a
+  self-reference, not a hit) after a first run failed on 5 hits, 2 of them genuine
+  wording problems that were reworded.
+* Rules layer written and **type-clean** (`npx tsc --noEmit` empty):
+  `src/engine/{types,config,pieces,board,random,bindings}.ts`,
+  `src/gameplay/{score,session,duel,persistence}.ts`,
+  `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
+  fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
+  `src/modes/duel/index.ts`.
+* Rules-layer tests running green: **65 passed / 65** in
+  `src/tests/{board,pieces,random,scoring}.test.ts` + `helpers.ts` (committed in
+  `fd83195` and `1ca7338`).
 
 ## 4. In progress
 
-* This docs batch (`docs/architecture/*`, `docs/game-design.md`,
-  `docs/asset-provenance.md`) — written before the code they specify.
-* Then: implementation, in commit-sized groups —
-  engine → gameplay+modes → render+audio+ui+app → configs → e2e → README/TODO/
-  CHANGELOG. `vite.config.ts`, `vitest.config.ts`, `playwright.config.ts` and
-  `src/app/main.ts` (referenced by `index.html`) do **not exist yet**; the
-  project does not build yet.
+* Writing the rules-layer Vitest suite. Done: `board`, `pieces`, `random`,
+  `scoring`. Remaining: `movement`, `timings`, `lines`, `session`, `levels`,
+  `modes`, `blocks`, `determinism`, `persistence`, `bindings`, `assets`.
+* Facts the suite established, so nothing here re-derives them:
+  `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
+  and `input()` emits synchronously on key-down, so a helper that calls
+  `advance()` must use its return value — `events()` afterwards is empty.
+  `press`/`release`/`tap`/`hardDrop`/`steer`/`awaitActive` in `src/tests/helpers.ts`
+  therefore return `SessionEvent[]`.
+* Verified frame numbers in our implementation: level-1 gravity moves on frame
+  **50**; soft drop on **1, 5, 9**; DAS repeats at **16, 22, 28** after the
+  immediate key-down move, so a tap is exactly one column; the piece locks on the
+  first landed frame (`lockDelayFrames: 0`); `lines` lands on frame
+  **`clearFreezeFrames` (30)**; `completeFloor(s, rows)` needs the field otherwise
+  **empty**, because a piece lands on any debris and then misses the floor row.
+* `docs/asset-provenance.md` lists a `pause` sfx that `SfxName` does not have, and
+  `docs/architecture/interfaces.md` still shows pre-implementation signatures
+  (`events()` as a property, `pushRow(cell, holes: COUNT)` argument order,
+  `clearScore` shape, `ghost: number | null`, T spawning nub-down). Fix both in
+  the docs pass.
+* Then: `src/ui` (scenes + options + bindings screens), `src/render` (palette,
+  procedural blocks, 5×7 font, renderer), `src/audio`, `src/app` (main, loop,
+  input, layout), `vite.config.ts`, `playwright.config.ts`.
+  `src/app/main.ts` (referenced by `index.html`) and both configs do **not exist
+  yet**; the project does not build yet.
+* Commit groups: engine+gameplay+modes → tests → render/audio/app → configs →
+  e2e → README/TODO/CHANGELOG.
+
 
 ## 5. Outstanding tasks
 

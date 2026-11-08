@@ -28,6 +28,9 @@ const SKIP_FILES = new Set([
   // rendered. Listed explicitly instead of silently skipped.
   "prompt.md",
   "package-lock.json",
+  // This scanner. Its rule table contains every forbidden string by necessity;
+  // matching those definitions against themselves is a self-reference, not a hit.
+  "scripts/forbidden-name-sweep.mjs",
 ]);
 
 /** Only these extensions carry project-authored text. */

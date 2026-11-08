@@ -18,3 +18,6 @@ docs/reverse-engineering/screenshots/
 # python bytecode from the RE helper scripts
 __pycache__/
 *.pyc
+
+# agent-local settings, worktrees and scratch state
+.qwen/
