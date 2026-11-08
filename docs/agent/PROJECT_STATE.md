@@ -83,12 +83,13 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **208 passed / 208** in
-  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel,blocks,determinism}.test.ts`
-  + `helpers.ts` (`npx vitest run`, 1.43 s; `npx tsc --noEmit` clean). `board`,
+* Rules-layer tests running green: **234 passed / 234** in
+  `src/tests/{board,pieces,random,scoring,movement,lines,timings,levels,session,modes,duel,blocks,determinism,persistence}.test.ts`
+  + `helpers.ts` (`npx vitest run`, 1.49 s; `npx tsc --noEmit` clean). `board`,
   `pieces`, `random`, `scoring` were committed in `fd83195` and `1ca7338`,
   `movement` in `10f1252`, `lines` in `8a5609a`, `timings`/`levels` in `f864f81`,
-  `session` in `471d62d`, `modes`/`duel` in `8551a67`, `blocks` in `a5e4088`.
+  `session` in `471d62d`, `modes`/`duel` in `8551a67`, `blocks` in `a5e4088`,
+  `determinism` in `8b9ae7c`.
 * **Six** rules bugs found by these suites and fixed, each verified by a mutation
   check (breaking the fix fails exactly those tests and nothing else) — five in
   `src/gameplay/session.ts`, one in `src/modes/goal-ladder.ts`:
@@ -157,25 +158,47 @@ everything else, including the deliverable list.
   `floodSameColour` edits also by `board.test.ts`). `git status --porcelain
   src/engine src/modes` empty afterwards.
 * **Mutation check of the determinism suite** (`src/tests/determinism.test.ts`,
-  7 tests; `/tmp/mutate-determinism2.py`): 8 replay-coupling edits inside
+  7 tests; `/tmp/mutate-determinism3.py`): 8 replay-coupling edits inside
   `src/gameplay/session.ts` — the piece generator not seeded, the piece queue
   shared between sessions, the frame counter and the hold slot moved to module
   scope, `advance` handing back one event instead of draining the queue, the
   ghost option gating a rule instead of a read, `seconds` read from the wall
-  clock, and the generator memoised across sessions — **all 8 killed, each one by
-  `determinism.test.ts` itself**. `src/gameplay` byte-identical afterwards
-  (`git status --porcelain src/gameplay` empty).
-  The first pass (`/tmp/mutate-determinism.py`) is the negative control for the
-  harness rather than for the suite: its d3/d7 were **equivalent** mutants —
-  `let frames = sharedFrames;` copies a module counter that nothing ever writes
-  back, so no run can tell it from the original — and its d4–d8 results are void
-  because the restore of those two edits corrupted the file for everything that
-  followed. Two harness rules follow from that: an edit whose replacement text is
-  **empty** must not be restored by the usual reverse-replace (`replace("", old, 1)`
-  inserts at byte 0, which is how the two declarations ended up duplicated at the
-  top of `session.ts`) — express a deletion as a replacement with valid non-empty
-  text — and no foreground test may run while a mutation driver is live, or the
-  reading comes from whichever mutant happens to be on disk.
+  clock, and the generator memoised across sessions — **8/8 killed, and every one
+  of them caught by `determinism.test.ts` itself** (`"mutants": 8, "killed": 8,
+  "by_ours": 8, "survivors": [], "setup_fails": [], "any_unclean_restore": []`,
+  `git status --porcelain src/gameplay/session.ts` empty afterwards, and
+  `cmp src/gameplay/session.ts /tmp/session.ts.bak` byte-identical). d3/d7 delete
+  the session-local declaration (replaced by a non-empty comment) so the closure
+  really resolves to module scope; `let frames = sharedFrames;` was an
+  *equivalent* mutant because nothing writes the copy back.
+  History that matters for reading any earlier number here: the first pass
+  (`/tmp/mutate-determinism.py`) had equivalent d3/d7 *and* its restore corrupted
+  `session.ts` for everything after, voiding d4–d8. The second pass
+  (`/tmp/mutate-determinism2.py`) then ran with d7's replacement text empty, which
+  aborted that edit and left mutant markers in the file — so its "all 8 killed,
+  each one by determinism.test.ts" was **not** evidence for d7 or d8; the file was
+  restored by hand (`git checkout --`), which is why the tree looked clean. Only
+  this third pass re-ran all 8 validly. Three harness rules come out of those two
+  accidents: express a deletion as a replacement with valid non-empty text;
+  **restore by copying the pristine backup and byte-verify afterwards**, never by
+  reversing the replacement (`replace("", old, 1)` inserts at byte 0); and no
+  foreground test may run while a mutation driver is live.
+* **Mutation check of the persistence suite** (`src/tests/persistence.test.ts`,
+  26 tests; `/tmp/mutate-persistence.py`): 23 edits to `src/gameplay/persistence.ts`
+  — corrupt payload discarded, a newer save trusted, every mode always open, stored
+  unlocks ignored, the table uncapped (once per site: loaded and recorded), ordered
+  worst-first, newest run always wins the best, a tie counts as a record, reset also
+  wipes settings, queued writes never coalesce, `flush` does not write, a failed write
+  still reports persisted, a quota failure escapes to the caller, the no-storage
+  fallback throws, `corrupt` never reported, counters/volume/`nextCount` unclamped, a
+  score entry needs no mode, bindings taken as-is, page hide does not flush, wrong
+  version stamp — **23/23 killed, 23/23 by `persistence.test.ts` itself**
+  (`"killed_but_not_by_ours": []`, `"survivors": []`, `"setup_fails": []`,
+  `"any_unclean_restore": []`, `git_status_src_gameplay` empty). Attribution needed
+  the harness fixed first: the per-file `FAIL src/tests/…` lines are **indented** by
+  vitest, so an anchored `^FAIL` regex matched nothing and a green campaign proved
+  nothing about *which* file caught a mutant. Lesson: record the attribution per
+  mutant, and treat the "did our file catch it" boolean as part of the evidence.
 
 ## 4. In progress
 
@@ -228,8 +251,32 @@ everything else, including the deliverable list.
   replays as the other, whatever presentation options are on, even after other
   runs — two more modes, a third copy of the same seed at a different seed, and
   both sides of a `createDuel` — were built and driven in between, and finishing
-  on the same frame with the same board every time).
-  Remaining: `persistence`, `bindings`, `assets`.
+  on the same frame with the same board every time),
+  and `persistence` (26 tests over `src/gameplay/persistence.ts`: a fresh record's
+  defaults and the fact that only the first mode is open; the payload round-trips and
+  carries `SAVE_VERSION`; a truncated payload, four scalar payloads, and a save from a
+  newer build are all refused *and kept aside* under `CORRUPT_KEY`, never leaking into
+  the record; a junk-shaped payload repairs to the documented defaults — `nextCount: 5`
+  and `showScore: false` are our own choices, not the reference's — while a legitimate
+  partial override survives, a stored binding survives, an unknown intent adds nothing,
+  and the one surviving high-score row keeps all five of its fields; array / empty-array
+  / empty-object payloads are *not* corrupt and still play; the table orders by score
+  then lines, caps at `HIGH_SCORE_LIMIT` both when loading and when recording, and the
+  cap holds as runs pile up across modes; `recordRun` counts a loss, only awards a clear
+  on a win, and a loser never opens the next mode while a winner does; the best, the
+  8-digit hex `lastSeed` and the table row all land in one call, a lower standing record
+  survives, `isBest` is strict (a tie is not a record); unlocks are derived from clears
+  rather than stored flags, and a once-opened mode stays open; `clearedProgress` keeps
+  every user choice and re-locks the ladder, and the store variant writes it at the
+  injected clock in exactly two writes with a reload proving it hit storage; the store
+  coalesces updates inside `SAVE_DEBOUNCE_MS` into one write; `flush()` writes and
+  cancels the queued timer; a reopen reads back settings, assist, bindings, counters and
+  the table; a failing `setItem` reports `persisted: false` once and the in-memory copy
+  keeps working; with no storage at all the store is in-memory and silent; when the
+  browser exposes `localStorage` the default store finds it (and a `localStorage` that
+  throws on access still loads, with defaults and no corrupt flag); `pagehide` and
+  `visibilitychange` are both registered and both flush).
+  Remaining: `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
   and `input()` emits synchronously on key-down, so a helper that calls
@@ -359,14 +406,17 @@ everything else, including the deliverable list.
    line clear, seeded 7-bag, ghost, hold. **Written and tested** (gravity/lock/
    spawn/freeze timings pinned by `timings.test.ts`, the state machine and mode
    contract by `session.test.ts`). Remaining rules-layer test files:
-   `persistence`, `bindings`, `assets`.
+   `bindings`, `assets`.
 2. Gameplay: session state machine, goal/level progression, score (opt-in),
    top-out, garbage + star special blocks, persistence (settings, bindings,
-   unlocks, high scores, reset-with-confirmation). **Written**; the session core
-   is pinned by `session.test.ts`, all six single-player modes by
-   `modes.test.ts` (including `linked-blocks`, i.e. FUSION) and the versus
-   wrapper by `duel.test.ts`. Still owed: `persistence` and `bindings` tests,
-   and persistence has never run against a browser `localStorage`.
+   unlocks, high scores, reset-with-confirmation). **Written and tested**; the
+   session core is pinned by `session.test.ts`, all six single-player modes by
+   `modes.test.ts` (including `linked-blocks`, i.e. FUSION), the versus wrapper by
+   `duel.test.ts`, and the save layer by `persistence.test.ts` (26 tests, mutation
+   check in § 3). Persistence runs against a `KeyValue` double and a shimmed
+   `globalThis.localStorage`, including one that throws on access; the real
+   browser-storage path still only lands with the Playwright pass (item 6).
+   Still owed: `bindings` tests.
 3. Modes: 6 single-player + DUEL, each its own rules module + tests. **Written
    and tested**; the module contract and every mode-specific rule are pinned, and
    the suite was mutation-checked as described in § 3.
@@ -382,10 +432,32 @@ everything else, including the deliverable list.
 
 ## 6. Known issues & blockers
 
-* **No disassembler/decompiler available** (checked: Ghidra, rizin, radare2,
-  Hopper, ARM objdump) → zero code-level findings. The `gearboy` MCP server is
-  available and has breakpoints/stepping/trace; it is the recommended next RE
-  step for the memory-layout unknowns (U28/U29/U30/U32).
+* **Corrected 2026-11-08: code-level RE is available.** An earlier entry here
+  claimed no disassembler or decompiler was installed; that was wrong — the check
+  only covered `PATH` and `/Applications`, and it never ran Ghidra's support script.
+  Verified inventory on this machine: **radare2 6.2.6** (`+0 abi:174 @ darwin-arm_64`)
+  with `r2` and `rabin2` in `/opt/homebrew/bin`; **rizin** at `/opt/homebrew/bin/rizin`
+  (no `rz` shim); **Ghidra 12.2** — `ghidraRun` on `PATH`, and
+  `/opt/homebrew/Cellar/ghidra/12.2/libexec/support/analyzeHeadless`, which *runs* and
+  prints its usage banner, resolving its own JDK (openjdk 25.0.5) even though plain
+  `java -version` says "Unable to locate a Java Runtime"; `openjdk@21` (21.0.13) and
+  `openjdk@25` are both installed under `/opt/homebrew/opt`; **Hopper 6.6.1-demo** at
+  `~/Applications/Hopper Disassembler.app`, whose `Contents/MacOS/` holds `hopper`
+  (CLI), the GUI binary, and `HopperMCPServer` — deliberately not launched here, since
+  it opens a window. `/usr/bin/objdump` handles aarch64/x86 only, so it is not an ARM
+  tool. Reading the reference ROM with `rabin2 -I`: `arch arm`, `bits 32`,
+  `endian little`, `machine` reports the reference handheld platform,
+  `binsz 4194304`, `havecode true`, `stripped false`, **`laddr 0x0`** — a
+  flat-load raw ROM, so the `0x08000000` mirror
+  base has to be set by hand before any branch target or data reference makes sense
+  (that is very likely why an earlier `aa` pass found no functions: Thumb code executed
+  from `0x08000000` was analysed at file offsets).
+  Next RE step, in order: a Ghidra headless import with the base set to `0x08000000`
+  plus full auto-analysis (background — it takes minutes on 4 MiB), then radare2 with
+  `org 0x08000000` + `afca`/`aan` for a quicker cross-check, and `gearboy` breakpoints
+  to confirm whatever the disassembly claims. Everything already shipped stays based on
+  runtime + pixel evidence; a code-level finding has to *confirm* one of the unknowns in
+  `reverse-engineering-unknowns.md` before any rule changes.
 * mGBA throttles to ≈1 fps when its window is occluded → RPC timeouts. Fix:
   raise the window (`open -a mGBA`). `bridge.wait_frames` raises on this.
 * The bridge serves one request per frame, so scripted menu input drifts; menu
