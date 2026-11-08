@@ -26,12 +26,22 @@ export const configWith = (over: Partial<GameConfig> = {}): GameConfig => ({
   ...over,
 });
 
+/**
+ * A session with its event queue already drained. The constructor deals the first
+ * piece, so `spawn` events are pending before the caller receives the object; every
+ * test here asserts on what *its own* input caused, so that opening batch is
+ * discarded. A session suite that wants to see it goes through `createSession`.
+ */
 export const makeSession = (
   mode: ModePlugin = goalLadderMode,
   seed = SEED,
   over: Partial<GameConfig> = {},
   difficulty: Difficulty = 2,
-): Session => createSession({ mode, seed, config: configWith(over), difficulty });
+): Session => {
+  const s = createSession({ mode, seed, config: configWith(over), difficulty });
+  s.advance(0);
+  return s;
+};
 
 /**
  * `advance()` drains the queue even for a zero-frame step, and an intent that is
@@ -214,12 +224,18 @@ export const dropAt = (s: Session, column: number): SessionEvent[] => [
 ];
 
 /**
- * Smallest seed whose first bag piece is `want`, so a test can name the piece it
- * drops without hard-coding a lucky seed.
+ * A seed whose bag has `want` at index `slot` (0 = the opening piece), so a test
+ * can name the piece it drops instead of hard-coding a lucky seed number.
+ *
+ * The search strides through seeds by the golden-ratio constant rather than
+ * walking 1, 2, 3, ...: consecutive mulberry32 seeds produce near-identical first
+ * outputs, so a linear scan hits one identity over and over and needed thousands
+ * of tries for the rarer pieces.
  */
-export const seedShowing = (want: PieceId): number => {
-  for (let seed = 1; seed < 100000; seed += 1) {
-    if (queueFrom(seed, 1)[0] === want) return seed;
+export const seedShowing = (want: PieceId, slot = 0): number => {
+  for (let i = 1; i <= 65536; i += 1) {
+    const seed = Math.imul(i, 0x9e3779b9) >>> 0;
+    if (queueFrom(seed, slot + 1)[slot] === want) return seed;
   }
-  throw new Error(`no seed below 100000 opens with ${want}`);
+  throw new Error(`no seed below 65536 strides has ${want} at bag index ${slot}`);
 };

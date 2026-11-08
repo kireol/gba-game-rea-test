@@ -315,6 +315,9 @@ export const createSession = (opts: SessionOpts): Session => {
       landedTimer = 0;
       if (isTopOut(board, piece)) setStatusDirect('lost');
     } else {
+      // An empty slot takes the piece out of play; otherwise it would sit in the
+      // slot and keep falling, which is a free duplicate of it.
+      active = null;
       spawnTimer = Math.max(1, config.spawnDelayFrames);
     }
   };
@@ -434,11 +437,15 @@ export const createSession = (opts: SessionOpts): Session => {
     }
     if (status !== 'playing') return;
     switch (intent) {
+      // The held flag is recorded here because `handleAutoShift` gates on it and
+      // only this switch knows which side an intent belongs to.
       case 'left':
+        held.left = down;
         if (down) pressDirection(-1);
         else releaseDirection('left');
         break;
       case 'right':
+        held.right = down;
         if (down) pressDirection(1);
         else releaseDirection('right');
         break;

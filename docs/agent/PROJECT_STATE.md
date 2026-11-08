@@ -62,7 +62,7 @@ everything else, including the deliverable list.
   (91 packages) on 2026-11-07 — an earlier `node_modules` was absent, so nothing
   had actually been installed before that.
 * Git: branch `main`, history `cf75ac7` → `e355664` → `5524b41` → `fd83195` →
-  `1ca7338`. ROM and reference screenshots are gitignored (`rom/`,
+  `1ca7338` → `d15e1fd`. ROM and reference screenshots are gitignored (`rom/`,
   `docs/reverse-engineering/screenshots/`, `docs/reverse-engineering/states/`).
 * `scripts/start-mgba.sh` no longer hard-codes the reference file name (now
   `$1` / `$REFERENCE_ROM` / first `rom/*.gba`).
@@ -79,21 +79,53 @@ everything else, including the deliverable list.
   `src/modes/{types,util,goal-ladder,linked-blocks,timed-goal,
   fixed-lines-race,timed-max-lines,rising-garbage,registry}.ts`,
   `src/modes/duel/index.ts`.
-* Rules-layer tests running green: **65 passed / 65** in
-  `src/tests/{board,pieces,random,scoring}.test.ts` + `helpers.ts` (committed in
-  `fd83195` and `1ca7338`).
+* Rules-layer tests running green: **88 passed / 88** in
+  `src/tests/{board,pieces,random,scoring,movement}.test.ts` + `helpers.ts`
+  (`npx vitest run`, 531 ms; `npx tsc --noEmit` clean). The first four files were
+  committed in `fd83195` and `1ca7338`.
+* Two rules bugs found by the movement suite and fixed in
+  `src/gameplay/session.ts`, both verified by a mutation check (breaking the fix
+  fails exactly those tests and nothing else):
+  * `held.left`/`held.right` were never recorded, so `handleAutoShift` always
+    bailed and DAS/ARR were dead code — holding a direction moved exactly one
+    column. Now set in the `input()` switch, the only place that knows which side
+    an intent belongs to.
+  * `doHold()` with an empty slot moved the piece into the slot but left it in
+    play, i.e. a free duplicate. Now `active = null`.
 
 ## 4. In progress
 
 * Writing the rules-layer Vitest suite. Done: `board`, `pieces`, `random`,
-  `scoring`. Remaining: `movement`, `timings`, `lines`, `session`, `levels`,
-  `modes`, `blocks`, `determinism`, `persistence`, `bindings`, `assets`.
+  `scoring`, `movement` (column movement + DAS/ARR, rotation, projection, hard
+  drop, hold, input while paused). Remaining: `timings`, `lines`, `session`,
+  `levels`, `modes`, `blocks`, `determinism`, `persistence`, `bindings`, `assets`.
 * Facts the suite established, so nothing here re-derives them:
   `session.advance(n)` drains and **returns** the queued events even for `n = 0`,
   and `input()` emits synchronously on key-down, so a helper that calls
   `advance()` must use its return value — `events()` afterwards is empty.
   `press`/`release`/`tap`/`hardDrop`/`steer`/`awaitActive` in `src/tests/helpers.ts`
   therefore return `SessionEvent[]`.
+  `createSession()` calls `doSpawn()` during construction, so `spawn` + `sfx` are
+  pending before the caller receives the object; `makeSession` discards that
+  opening batch with `advance(0)` and the session suite has to go through
+  `createSession` to see it.
+  `snapshot().active` and `snapshot().board` are the **live** objects the session
+  mutates (`doHardDrop` moves `active.y`), so a test that compares against the
+  pre-mutation state must copy the scalars out first. `cellsOf(piece, rot, ox, oy)`
+  takes *relative* offsets and already adds `piece.x/y` — passing the piece's own
+  column as `ox` doubles it and reads the wrong cells.
+  Movement tests stay piece-agnostic: at rotation 0 every shape touches both box
+  walls, so the occupied span equals `BOX[id]`, which gives the wall clamp
+  (`cols - boxWidth`) and the empty-field projection (`rows - boxHeight`) for
+  whatever the bag dealt. The refused-rotation setup derives the cell to block
+  from the next rotation state instead of hard-coding a coordinate.
+  `seedShowing` strides candidate seeds by `0x9e3779b9`: consecutive mulberry32
+  seeds produce near-identical first bags, so the old linear scan needed ~4400
+  probes for one piece (~2.7 s); strided it is 1–16 probes and the whole suite
+  dropped from ~3.2 s to 0.53 s.
+  For the shared `SEED = 0x5eed1234` the first ten bag pieces are
+  **L, Z, I, S, O, J, T, S, L, T**, so a fresh session opens on L with queue
+  `[Z, I, S]`; `cellOf('L') === 7`.
 * Verified frame numbers in our implementation: level-1 gravity moves on frame
   **50**; soft drop on **1, 5, 9**; DAS repeats at **16, 22, 28** after the
   immediate key-down move, so a tap is exactly one column; the piece locks on the
