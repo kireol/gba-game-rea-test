@@ -14,7 +14,9 @@ export const timedMaxLinesMode: ModePlugin = {
   rules: [
     `You have ${LIMIT_SECONDS / 60} minutes. Every line counts.`,
     'The level rises every 8 lines.',
-    'The run ends when the clock hits zero — a fast stacker simply scores higher.',
+    // ASCII only: the 5x7 table has no em-dash, and drawText drops a glyph it
+    // lacks without warning. font.test.ts walks the screens to keep it that way.
+    'The run ends when the clock hits zero - a fast stacker simply scores higher.',
     'Topping out before that still loses.',
   ],
   showLines: true,

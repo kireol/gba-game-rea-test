@@ -7,9 +7,12 @@ each item names the file it concerns and how its absence is currently papered ov
 `npm run test:e2e` 7 tests green; `npm run build` green; `npm run report` PASS.
 Nothing below is "in progress" unless it says so.
 
-**Updated 2026-11-08 (later that day): § 1 item 4 is done.** New baseline
+**Updated 2026-11-08 (later that day): § 1 item 5 is done.** New baseline
+**23 files / 428 tests**, e2e 7 green, build green, sweep PASS over 99 files.
+**Next item in § 1: 6.** § 2 is done too, by the same file, and says so.
+
+**Earlier that day: § 1 item 4 is done.** Baseline then:
 **21 files / 377 tests**, e2e 7 green, build green, sweep PASS over 96 files.
-**Next item in § 1: 5.**
 
 **Updated 2026-11-08: § 1 items 1-3 are done.** Baseline then: **18 files / 306
 tests**, e2e 7 green, build green, sweep PASS over 92 files.
@@ -78,22 +81,41 @@ Order of work, cheapest-and-most-dangerous first:
    headers — `scenes.ts:578` picks between `GOAL CLEARED`, `RUN OVER` and `DUEL
    OVER`, and only the middle one is asserted anywhere (`scenes-run.test.ts:261`);
    nothing reaches a won run or a finished duel.
-5. `src/tests/render.test.ts` + `src/tests/font.test.ts` — needs a canvas fake or
-   jsdom; assert the FrameModel → draw-call mapping rather than pixels.
+5. `src/tests/render.test.ts` + `src/tests/font.test.ts` — **done 2026-11-08; 33 + 18
+   tests.** No jsdom and no node-canvas: `src/tests/render-harness.ts` records the 2D
+   calls a `FrameModel` produces, which is the right seam because `renderer.ts` is the
+   only module that touches a canvas and every coordinate it emits is a framebuffer
+   pixel. Order, geometry and resolved colour are all visible in the call list, and
+   nothing had to be made public to get at them.
+   **It found a shipped bug:** `timed-max-lines.ts:17` had an em-dash in its rules
+   prose, the font has none, and `drawText` drops a glyph it lacks without warning —
+   BLITZ's rules card was drawing a hole where the dash should be.
+   What this suite still cannot see: the tile bevel texture and the atlas blit, which
+   need a real `document` (see the harness header).
 6. `src/tests/audio.test.ts` — fake `AudioContext`: exactly one voice set per
    effect, music starts only on the edge into `playing`, mute persists.
+   **← next.** The last module with no test of any kind.
 
 ## 2. Font table (`src/render/font5x7.ts`)
 
-* No coverage test exists for the 63-key bit table. Add one that asserts: every
-  key is exactly 7 rows of exactly 5 characters, only `#` and `.` appear, and every
-  character in every shipped UI string renders (`canRender`).
-* Printable-ASCII characters with **no glyph at all**: `" $ [ ] ` ~` (the space is
-  the only key whose glyph exists but carries no ink). Add glyphs or keep the list
-  as an explicit "known-empty" set in the test so a future author knows the
-  difference between a gap and a deliberate blank.
-* No non-ASCII coverage (`× ° → ♥` and accents are absent). Fine today — pin it so
-  it stays a decision rather than an accident.
+**Done 2026-11-08 by `src/tests/font.test.ts` (18 tests).** The table itself stays
+module-private — it is art, not an interface — so the suite works through the public
+surface: probe the printable range with `glyphRows`/`canRender`, and check geometry by
+drawing onto the recording canvas.
+
+* Shape rows are in: 7 rows of 5, only `#` and `.`, no two characters sharing a
+  drawing, lowercase borrowing the capital (which is also the atlas key). Shipped
+  strings are covered by **walking every screen** rather than scanning source for
+  literals — a scan cannot tell a label from a comment and misses strings assembled at
+  run time. That walk is what caught the em-dash.
+* The known-empty set is pinned as a named list rather than inferred: six characters,
+  `"`, `$`, `[`, `]`, backtick, `~`. Space is deliberately **not** one of them — its
+  glyph exists and carries no ink, which the suite asserts separately so a gap and a
+  blank stay tellable.
+* Non-ASCII is pinned absent as a decision, with the reason next to it: a 5×7 table
+  draws every glyph by hand, so labels are ASCII and a multiply sign becomes `x`. The
+  row that pins it says plainly that `drawText` will drop anything else silently, which
+  is exactly how the em-dash survived shipping.
 
 ## 3. Audio (`src/audio/engine.ts`)
 

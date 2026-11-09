@@ -341,7 +341,7 @@ The labels are what players see; the ids never reach the screen except through
 
 ## Presentation layer
 
-### `src/render/frame.ts` — the render boundary **[U indirectly; the e2e suite asserts through it]**
+### `src/render/frame.ts` — the render boundary **[U indirectly: built per row by `render.test.ts`, asserted per screen by `scenes-*.test.ts`]**
 
 ```ts
 type TextAlign = 'left' | 'center' | 'right';
@@ -363,7 +363,10 @@ and the clear flash together). A scene emits one immutable `FrameModel` per fram
 the renderer knows nothing about modes, sessions or the DOM beyond its canvas,
 which is what lets a scene's output be asserted without a canvas.
 
-### `src/render/{palette,font5x7,renderer}.ts` **[—]** · `blocks.ts` **[U `blocks.test.ts`, 8 tests]**
+### `src/render/renderer.ts` **[U `render.test.ts`, 33 tests]** · `font5x7.ts` **[U `font.test.ts`, 18 tests]** · `blocks.ts` **[U `blocks.test.ts`, 8 tests]** · `palette.ts` **[— indirectly]**
+
+`palette.ts` has no file of its own; `resolveColour`/`shade`/`withAlpha` are asserted
+through the draw calls that consume them, in all three suites above.
 
 (`src/app/layout.ts` is not part of this section and has its own unit file; see § 6.)
 
@@ -380,6 +383,12 @@ const FONT_W = 5, FONT_H = 7, FONT_ADVANCE_X = 6, FONT_ADVANCE_Y = 8
 keyFor(ch) → table key (lowercase borrows the capital)   canRender(text): boolean
 glyphRows(ch)   textWidth(text, scale = 1)
 interface TextOptions { scale?: number; align?: 'left'|'center'|'right'; baseline?: number }
+drawText(ctx, text, x, y, colour, opts?)   wrapText(text, maxWidth): string[]
+// wrapText is word-wise, keeps a hard newline, gives an over-long word its own line,
+// and trims the result; it never looks at glyph pixels.
+// drawText skips a character it has no key for and keeps walking, silently, keeping
+// its advance column. The table has no non-ASCII keys: labels are ASCII by decision
+// and `font.test.ts` walks the screens to keep that true.
 // renderer.ts
 interface Renderer { readonly canvas; readonly width; readonly height;
                      paint(model: FrameModel): void; reset(width, height): void }

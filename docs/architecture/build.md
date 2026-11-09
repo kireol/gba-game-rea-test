@@ -9,7 +9,7 @@
 | `npm run build` | `npm run typecheck` then `vite build` → `dist/` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` (strict; `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) |
-| `npm test` | Vitest — 21 unit files / 377 tests (node environment by default; `layout.test.ts` and `input.test.ts` opt into jsdom per file, and the three `scenes-*.test.ts` files need no DOM at all — they drive the screen machine through a stub `SceneHost`) |
+| `npm test` | Vitest — 23 unit files / 428 tests (node environment by default; `layout.test.ts` and `input.test.ts` opt into jsdom per file, and the three `scenes-*.test.ts` files need no DOM at all — they drive the screen machine through a stub `SceneHost`) |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:e2e` | Playwright browser suite (needs `npx playwright install chromium` once) |
 | `npm run test:all` | unit suite then browser suite |
@@ -69,10 +69,18 @@ extension (`import { … } from '../engine/types.js'`), which is what
   out is that host, so every sound, status edge, announcement and persistence write is
   assertable from the recorder, and `frame()` returns the draw calls the screen would
   have made. What it turned up is recorded in `docs/agent/PROJECT_STATE.md` § 6.
+* `src/render/renderer.ts` and `src/render/font5x7.ts` have had unit tests since
+  2026-11-08: 33 in `src/tests/render.test.ts`, 18 in `src/tests/font.test.ts`, over
+  `src/tests/render-harness.ts`. Neither rasterises anything — the harness records the
+  2D calls a `FrameModel` produces, which is where every framebuffer coordinate is
+  decided — and the font file checks the glyph table against the strings the screen
+  machine actually asks for, by walking every screen. Two things stay browser-only
+  because `document` is undefined under node: the tile bevel texture in `blocks.ts` and
+  the atlas blit in `font5x7.ts`, both of which degrade to a flat `fillRect` in the unit
+  environment.
 * Still exercised **only** through the browser suite: `src/ui/options.ts`,
-  `src/ui/widgets.ts`, `src/app/main.ts` and `src/render/{renderer,font5x7}.ts`;
-  `src/audio/engine.ts` is not exercised by any test at all, in Node or in the
-  browser. Those gaps are tracked in `TODO.md` § 1, and
+  `src/ui/widgets.ts` and `src/app/main.ts`; `src/audio/engine.ts` is not exercised by
+  any test at all, in Node or in the browser. Those gaps are tracked in `TODO.md` § 1, and
   `docs/architecture/interfaces.md` tags each module `[U]`/`[E]`/`[—]` so the gap is
   visible where the API is read.
 * Every test that depends on timing drives `session.advance(n)` — never a timer.

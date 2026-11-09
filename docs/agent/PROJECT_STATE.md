@@ -395,6 +395,51 @@ only brief requirement known to be unmet).
     a hold *click* is silent until the following frame — assert it with
     `pointer(...) → advance(1)`, not by reading the log immediately (a hard drop, by
     contrast, locks synchronously).
+* `render.test.ts` (33) and `font.test.ts` (18) close `TODO.md` § 1 item 5 (and § 2)
+    over a new `src/tests/render-harness.ts`. **The seam is the recording 2D context**,
+    chosen because `src/render/renderer.ts` is the only module in the project that talks
+    to a canvas and every coordinate it emits is a framebuffer pixel: a row can ask "what
+    would this frame have painted" and get an ordered call list, which is where a 1-px
+    error in a centring or clipping formula actually lives. Nothing rasterises, so no
+    jsdom and no node-canvas; and nothing had to be made public to get at it — the
+    private tile cache, the atlas and the glyph table all stay private.
+  * What the rows pin, in order: the paint order (clear → boxes → fields → previews →
+    bars → texts → veil); that a model without `bg` still paints `COLOURS.bg` and that
+    `paint` clears with a full-screen `fillRect`, never `clearRect`, so no scene can
+    paint a transparent frame; identity across `reset()`; the whole failure branch
+    (`makeCanvas(false)` → a renderer that throws once, keeps its identity and re-throws
+    on every later paint, so the app can never be handed a half-dead renderer); the
+    field's clip (`save/beginPath/rect/clip/restore`), whose rect starts at
+    `y − (board.rows − rows) * cell` because spawn rows sit **above** the visible field;
+    `dim` on a preview being a *colour* (`shade(textDim, 0.62)`) rather than an alpha, so
+    it composites without `globalAlpha`; the dashed border; the veil's `min(1, veil)`
+    ramp; the bar's inset.
+  * Under node `document` is undefined, so `blocks.ts` and `font5x7.ts` both skip their
+    atlas path and degrade to a flat `fillRect`. Position, size and colour are common to
+    both paths and are pinned; the tile bevel texture and the atlas blit are
+    browser-only, and the harness header says so where a test author will read it.
+  * `font.test.ts` checks the table against the strings the game *asks* for by walking
+    every screen the scene machine can show — title, scores, **every options row opened
+    from a fresh record** (that is how the controls editor and the erase confirmation get
+    exercised without hardcoding either row's index), the rules card scrolled four rows,
+    the live HUD, the pause menu, results, and the locked-mode announcements — rather
+    than scanning source for string literals, which cannot tell a label from a comment
+    and misses anything assembled at run time.
+  * **It found a shipped bug on its first run.** `src/modes/timed-max-lines.ts:17`
+    carried an em-dash in BLITZ's rules prose; the 5×7 table has no em-dash and
+    `drawText` drops a glyph it lacks without a word, so the card rendered
+    `zero  a fast stacker` with a hole where the dash should be. Now an ASCII hyphen.
+    Sweeping every non-comment line under `src/` for non-ASCII found no other offender
+    (the `palette.ts` hits are comments, never drawn). § 6.
+  * Most of its first-run failures were mine, not the code's, and each was a trap worth
+    naming: a dashed border's rails (`h === 1`) and posts (`w === 1`) have to be split
+    before the 2-on-1-off order is tellable; a field with `flashFrames: 0` still paints
+    its background, so "no overlay" is a colour list rather than a fill count; `wrapText`
+    breaks `…BEFORE THE PIECE BAG…` after `THE`, not before it; only something like `'!'`
+    inks a predictable column, so an advance assertion has to pick its glyph; and with
+    `noUncheckedIndexedAccess` a bare `[x, y, w, h]` array hands callers
+    `number | undefined` unless the tuple is named. Vitest stayed green through that last
+    one — `npm test` does not typecheck (§ 5 item 7) — and `npx tsc --noEmit` caught it.
 
 ## 4. In progress
 
@@ -616,10 +661,12 @@ only brief requirement known to be unmet).
      that `debug()` reads side A only in duel.
 
      **← next, per `TODO.md` § 1 — that section is the order a resuming session
-     follows, and its next item is 5: `render.test.ts` + `font5x7.test.ts`, then
-     item 6, `audio.test.ts` with a fake `AudioContext`. Item 4 below covers the
-     same layer from the other end and is an equally valid entry point; keep only
-     one "**← next**" marker live at a time.**
+     follows. Its item 5 (`render.test.ts` + `font.test.ts`) landed 2026-11-08, so the
+     live one is item 6: `audio.test.ts`, over a fake `AudioContext` — one voice set per
+     effect, music starting only on the edge into `playing`, mute persisting. It is the
+     last module in the project with no test in either environment. Item 4 below covers
+     the same layer from the other end and is an equally valid entry point; keep only one
+     "**← next**" marker live at a time.**
   4. `src/ui/widgets.ts` (`rowUnderPoint`, `menuRects`, `addField`),
      `src/ui/options.ts`, `src/ui/format.ts` (`mmss`, score padding).
   5. **Done 2026-11-08** — `src/engine/bindings.ts` (`normalizeBindings`, `rebind`,
@@ -651,7 +698,9 @@ only brief requirement known to be unmet).
     characters using only `#` and `.`; of the 95 printable ASCII characters the six
     with **no glyph at all** are `` `" $ [ ] ` ~` ``, and the space is the only key
     whose glyph carries no ink. Notes here previously said 61 keys and a different
-    character set; `node` evaluation over the `G` table settles it.
+    character set; `node` evaluation over the `G` table settled it, and since
+    2026-11-08 `src/tests/font.test.ts` asserts all of it, the six known-empty
+    characters included as a named set (§ 3).
   * A production `dist/` is `index.html` + one JS bundle + its map. **There is no CSS
     file** — the stylesheet is inline in `index.html` (`grep -c '<style>' index.html`
     → 1) — so "one HTML, one JS and one CSS file" was wrong, including in the fresh
@@ -668,7 +717,11 @@ only brief requirement known to be unmet).
   the test campaign → `4c29d08` render/audio/app/ui + configs + index.html + e2e +
   layout tests → **`fb3ffdf` README/TODO/CHANGELOG/milestone report + the docs pass
   above** (12 files, +1 472/−213, docs-only: no `src/` change, so the five gate
-  results recorded in § 3 still describe `main`). Nothing pushed.
+  results recorded in § 3 still describe `main`) → **`e3e3620` the scene-machine
+  suites** (71 tests over one shared harness). The paint-layer suites
+  (`render-harness.ts`, `render.test.ts`, `font.test.ts`), the one line of copy they
+  forced, this doc sync and the `interfaces.md` coverage tags follow on `main`.
+  Nothing pushed.
 
 
 ## 5. Outstanding tasks
@@ -705,25 +758,29 @@ only brief requirement known to be unmet).
    material), fullscreen + responsive scaling with correct aspect. **Written and
    browser-verified for scaling** (`layout.test.ts` 14 tests + the e2e viewport
    test). `toggleFullscreen` is only proven not to throw where the API is missing;
-   a real fullscreen transition is untested. Font/art/audio have no tests.
+   a real fullscreen transition is untested. **The font (18 tests) and the paint layer
+   (33) have had unit tests since 2026-11-08, and the art has had 8** (§ 3), so audio is
+   now the only thing on this line with no test of any kind — which is `TODO.md` § 1
+   item 6.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
-   tests. **377 unit tests across 21 files, all green. Browser: 7 Playwright
+   tests. **428 unit tests across 23 files, all green. Browser: 7 Playwright
    tests green** on "Chrome Headless Shell 158.0.8127.18" (already installed, no
-   `playwright install` needed). Of the 377, **244 are rules/engine/gameplay**
-   (including `bindings.ts` 18 and `persistence.ts` 26) and 133 are not:
-   `render/blocks.ts` 8, `layout.ts` 14 (the framebuffer scaling), `loop.ts` 16,
-   `input.ts` 24, `scenes.ts` 71 (three files over one harness). Still open inside
-   this item: the presentation-layer unit tests in § 4 (`render/` + `font5x7` next,
-   then audio), `src/gameplay/assets.ts`, and a Playwright assertion for the real
+   `playwright install` needed). Of the 428, **244 are rules/engine/gameplay**
+   (including `bindings.ts` 18 and `persistence.ts` 26) and 184 are not:
+   `render/blocks.ts` 8, `render/renderer.ts` 33, `render/font5x7.ts` 18,
+   `layout.ts` 14 (the framebuffer scaling), `loop.ts` 16, `input.ts` 24,
+   `scenes.ts` 71 (three files over one harness). Still open inside
+   this item: the last presentation-layer suite in § 4 (`src/audio/engine.ts`),
+   `src/gameplay/assets.ts`, and a Playwright assertion for the real
    `localStorage` round-trip (the persistence suite covers that with a double only,
    so item 2's browser-storage caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
    `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
-   green on 2026-11-08** (latest run, after the scene suite and the doc sync that
-   came with it):
-   build/typecheck `BUILD_EXIT=0` (35 modules, 68.49 kB / 24.62 kB gzip); vitest
-   `377 passed (377)` in 21 files; Playwright `7 passed`; sweep
-   `PASS — no blocking hits`, 96 files, 3 acknowledged. (Those vitest numbers are
+   green on 2026-11-08** (latest run, after the paint-layer suites and the doc sync
+   that came with them):
+   build/typecheck `BUILD_EXIT=0` (35 modules, 68.49 kB / 24.60 kB gzip); vitest
+   `428 passed (428)` in 23 files; Playwright `7 passed (23.3s)`; sweep
+   `PASS — no blocking hits`, 99 files, 3 acknowledged. (Those vitest numbers are
    from the pre-commit `npm test`; the four gate commands are re-run verbatim in the
    commit message's verification note, and `docs/architecture/build.md` keeps the
    same table per gate.) Re-run all five after any
@@ -952,6 +1009,38 @@ of this writing.
   way into the mode list but the modes frame never draws that banner.** The refusal is
   still audible (`rotate-fail` + `… IS LOCKED. CLEAR THE MODE BEFORE IT FIRST.`), so
   this is a visual-only gap; still the only screen that sets a banner nobody renders.
+
+**Found while pinning the paint layer (2026-11-08, `render.test.ts` / `font.test.ts`).**
+One shipped bug, fixed in the same change that found it, and the rest descriptions of
+what the renderer already does — worth reading before anyone re-derives them:
+
+* **`timed-max-lines.ts:17` had an em-dash, and the font silently ate it.** The
+  mechanism is the whole risk of a hand-drawn table: `drawText` has no `else` for a
+  character it lacks, and it keeps that character's advance column anyway, so the label
+  does not close up around the hole — it reads as a double space in the middle of a
+  sentence, in a mode whose rules card nobody re-reads. Two defences now: the
+  known-empty set and the ASCII-only decision are pinned as named rows, and the suite
+  walks every screen asserting `canRender` on what it finds. A source scan for string
+  literals would have caught this one by luck and cannot tell a label from a comment.
+* **`paint` never calls `clearRect`** — it covers the frame with a `fillRect` in
+  `model.bg ?? COLOURS.bg`. Omitting `bg` does not make a frame transparent; a scene
+  that wanted one would need the renderer to change, not just its model.
+* **`veil: 0` emits no draw call at all** (the `withAlpha` branch is skipped), so an idle
+  screen pays nothing for the pause dim. And `flashFrames: 0` still paints the field's
+  background, which is why "no overlay" has to be asserted as a list of colours rather
+  than a fill count.
+* **A field's clip rect deliberately starts above its own `y`** — `originY = y −
+  (board.rows − rows) * cell` — so the rows a board has that the frame does not show
+  clip out *above* the field instead of sliding the visible ones up. A caller that sets
+  `rows < board.rows` and expects the stack to sit on the bottom line gets that for
+  free; anyone changing that arithmetic moves the whole board.
+* **Dimming is a colour, not an alpha.** A dimmed preview is `shade(COLOURS.textDim,
+  0.62)` at full alpha; a dimmed field is `withAlpha(shadow, 0.55)`. They read
+  similarly, composite differently, and only the second depends on what is behind it.
+* **The unit environment cannot see the atlas.** Both `blocks.ts` and `font5x7.ts`
+  prefer a `drawImage` blit and fall back to flat `fillRect` when `document` is
+  undefined. If that guard ever changes, the fill-count rows in both suites stop
+  describing the browser — that is the first seam to re-check.
 
 ## 7. Important files
 
