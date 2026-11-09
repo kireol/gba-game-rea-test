@@ -559,6 +559,21 @@ product work is unchanged from the paragraph above.
     `npm run build` exit 0 (35 modules, 68.51 kB), `npm run test:e2e` 9 passed,
     `npm run report` PASS, and `git ls-files | xargs node scripts/forbidden-name-sweep.mjs`
     PASS over 103 tracked files.
+  * **Published.** `origin` = `https://github.com/kireol/gba-game-rea-test`, `main`
+    tracks it. The remote was **not** empty: its `main` carried the three
+    starter-template commits this project was seeded from, with no merge base against
+    our history. The operator picked the non-destructive option, so `b3ceaa0` merges
+    `origin/main` with `--allow-unrelated-histories`. The seven add/add files were
+    resolved per file, not wholesale: ours for `README.md` / `PROJECT_STATE.md` /
+    `QWEN.md`; theirs for `prompt.md` and `scripts/load-bridge.sh` (each differs by one
+    line only — theirs writes `$HOME/...` where ours had the machine username); ours
+    plus the same `$HOME` swap for `scripts/start-mgba.sh` (ours also drops the
+    hard-coded reference ROM name); union for `.gitignore`. No tracked file now contains
+    that personal path (`git grep --cached '/Users/cparent'` is empty). Watch item: the
+    remote's `.qwen/settings.json` is tracked although `.gitignore` lists `.qwen/` —
+    untracking it is a one-line commit if wanted. `feature/single-file-html` was
+    fast-forwarded into `main` and is now redundant. All four gates re-run green after
+    the merge.
 
 ## 4. In progress
 
