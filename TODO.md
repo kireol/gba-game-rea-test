@@ -7,7 +7,11 @@ each item names the file it concerns and how its absence is currently papered ov
 `npm run test:e2e` 7 tests green; `npm run build` green; `npm run report` PASS.
 Nothing below is "in progress" unless it says so.
 
-**Updated 2026-11-08: § 1 items 1-3 are done.** New baseline **18 files / 306
+**Updated 2026-11-08 (later that day): § 1 item 4 is done.** New baseline
+**21 files / 377 tests**, e2e 7 green, build green, sweep PASS over 96 files.
+**Next item in § 1: 5.**
+
+**Updated 2026-11-08: § 1 items 1-3 are done.** Baseline then: **18 files / 306
 tests**, e2e 7 green, build green, sweep PASS over 92 files.
 
 ## 1. Unit coverage for the presentation layer
@@ -18,7 +22,7 @@ locks", not "the pause menu's fourth row is wrong":
 
 | File | Lines | Risk it carries |
 | --- | --- | --- |
-| `src/ui/scenes.ts` | 1,343 | every screen, every hit-test, every countdown; the largest untested surface in the project |
+| ~~`src/ui/scenes.ts`~~ | 1,343 | ~~the largest untested surface~~ — **covered since 2026-11-08** by 71 tests in three files over `src/tests/scenes-harness.ts` (item 4) |
 | `src/audio/engine.ts` | 381 | autoplay unlock, music start/stop on status edges, mute persistence |
 | `src/ui/options.ts` | 274 | option row model → `SaveData` mutations |
 | `src/app/input.ts` | 213 | key/pointer/wheel mapping, prevented default set |
@@ -28,9 +32,12 @@ locks", not "the pause menu's fourth row is wrong":
 | `src/render/renderer.ts` | 167 | FrameModel → canvas; scale and clipping |
 | `src/app/main.ts` | 139 | composition only; leave it last |
 
-Done since this list was written (both were pure enough to test without a DOM,
-which is why they went first): `src/app/loop.ts` → `src/tests/loop.test.ts`
-(16 tests), `src/engine/bindings.ts` → `src/tests/bindings.test.ts` (18 tests).
+Done since this list was written: `src/app/loop.ts` → `src/tests/loop.test.ts`
+(16 tests) and `src/engine/bindings.ts` → `src/tests/bindings.test.ts` (18 tests),
+both pure enough to test without a DOM, which is why they went first; then
+`src/ui/scenes.ts` → 71 tests across `src/tests/scenes-{menus,options,run}.test.ts`
+(item 4), which needed no DOM either — the seam is the injected `SceneHost`, not the
+canvas.
 
 Order of work, cheapest-and-most-dangerous first:
 
@@ -55,10 +62,22 @@ Order of work, cheapest-and-most-dangerous first:
    from the previous owner, `unbind` falls back to the default, `normalizeBindings`
    drops garbage rows, `conflictsIn` sees both owners — plus the four behaviours
    `docs/agent/PROJECT_STATE.md` § 6 records from it.
-4. `src/tests/scenes-*.test.ts` — split by screen: title/modes/options/bindings/
-   scores/confirm/pause, plus the countdown (4 × 45 withheld frames) and
-   `debug().status`. The e2e suite already relies on `?test=1`'s contract; unit
-   tests should pin the same rows without a browser.
+4. ~~`src/tests/scenes-*.test.ts`~~ **done 2026-11-08** as three files over one
+   harness: `src/tests/scenes-harness.ts` (a recording `SceneHost` stub — no DOM, no
+   clock, no storage), `scenes-menus.test.ts` (18: title / mode list / high scores /
+   erase-confirmation), `scenes-options.test.ts` (26: options rows, sliders, the
+   bindings editor), `scenes-run.test.ts` (27: countdown, a live run, pause, results,
+   the versus screen). Every row this item asked for is pinned, including the
+   countdown's 4 × 45 withheld frames and what `debug().status` reports on each screen
+   (null everywhere there is no run; side A only in a duel). Nine things it found are
+   in `docs/agent/PROJECT_STATE.md` § 6, and the two sharp ones are worth reading
+   before touching a settings screen: the options grid runs off the bottom of the
+   screen and covers its own DONE button, and a `Delete` in the controls editor
+   announces a reset it did not perform.
+   **Still open here:** the rules-screen *scroll*, and the results card's other two
+   headers — `scenes.ts:578` picks between `GOAL CLEARED`, `RUN OVER` and `DUEL
+   OVER`, and only the middle one is asserted anywhere (`scenes-run.test.ts:261`);
+   nothing reaches a won run or a finished duel.
 5. `src/tests/render.test.ts` + `src/tests/font.test.ts` — needs a canvas fake or
    jsdom; assert the FrameModel → draw-call mapping rather than pixels.
 6. `src/tests/audio.test.ts` — fake `AudioContext`: exactly one voice set per

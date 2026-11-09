@@ -432,7 +432,7 @@ drawMenu(...) drawHeader(...) drawFooter(...) drawCard(...) drawStat(...)  textP
 `INFINITE_LOCK_DELAY` is a very large finite number (≈2.7 min per landed piece),
 not `Infinity` — `Infinity` would leak into the digest and the serialised config.
 
-### `src/ui/scenes.ts` — the screen machine **[E only; the biggest untested surface]**
+### `src/ui/scenes.ts` — the screen machine **[U `scenes-menus.test.ts` 18 + `scenes-options.test.ts` 26 + `scenes-run.test.ts` 27, over `scenes-harness.ts`; also E]**
 
 ```ts
 type SceneId = 'title' | 'modes' | 'rules' | 'play' | 'duel' | 'results'
@@ -458,25 +458,66 @@ interface SceneDebug { scene; status: GameStatus | null; seed: number; countdown
 createScenes(host: SceneHost, initial: SaveData): Scenes
 ```
 
-Rules that the browser tests depend on and that are easy to break silently:
+Rules that the browser tests depend on and that are easy to break silently.
+Since 2026-11-08 the same rows are pinned as unit tests too, through the seam this
+module was already built on: **`SceneHost` is the screen machine's only door out**, so
+`src/tests/scenes-harness.ts` hands it a recording stub and asserts every sound,
+status edge, announcement and `commit` without a DOM, a clock or storage —
+`setPersisted()` re-seeds what the next `loadBindings`/`loadPrefs` reads, `setClock()`
+makes a debounced save's commit observable, and `frame()` returns the draw calls the
+screen would have made, which is how a test asks "what is on this screen".
 
 * **A press activates the row under the pointer**, not the row the cursor was on
   when the pointer arrived — pointer entry already moves the menu cursor. So one
   click on a mode row can enter a screen that starts immediately.
 * `pointer(...,'hover')` moves the cursor and plays `menu-move`; a locked mode
-  refuses with `rotate-fail` and a `LOCKED` banner instead of navigating.
+  refuses with `rotate-fail` and an announcement, and does not navigate. It also calls
+  `setBanner('LOCKED', 60)`, which no frame on that screen draws — the banner is
+  audible, not visible (`PROJECT_STATE.md` § 6).
 * The 3-2-1-GO countdown withholds frames from the session (4 × 45) rather than
-  pausing it, so a counted run is bit-identical to an un-counted one.
-* `debug().status` is the live session status and is **null** outside play/duel.
+  pausing it, so a counted run is bit-identical to an un-counted one. `advance()`
+  emits one sound **per label change per call**: four 45-frame calls give
+  `menu-move, menu-move, menu-confirm, menu-confirm`, one 180-frame call gives just
+  `menu-confirm`. And its countdown branch consumes the whole batch, so frames past
+  the end of the count are **discarded** rather than carried into the run — harmless
+  for the app, which pumps one frame per animation tick, but a driver that batches
+  frames must call `advance()` twice.
+* Pause and resume are sound-events, not just status edges: pausing gives
+  `menu-confirm`, Escape-resume gives `menu-back` **twice** (once from `back()`, once
+  from `resume()`), and a duel Enter-resume gives `menu-confirm` then `menu-back`.
+  `blur()` pauses a live run, and while paused `advance()` returns before it reaches
+  the session, so the stack is frozen.
+* **Opening OPTIONS from the play pause menu drops the run** (documented: the record
+  is editable there, so the session cannot survive it), and Back from OPTIONS lands on
+  `play` with nothing behind it: no frame is drawn, every intent and pointer press
+  returns false, `blur()` is a no-op, and `debug()` reports `status: null` with
+  `level: 0`. `scenes-run.test.ts` pins that state with a `TODO(v0.1.2)` marker; the
+  route out is a reload.
+* **A player-two pause in a duel is drawn but not drivable by keyboard.** The gate
+  that hands the keyboard to the pause menu asks side A alone, so player two's PAUSE
+  key stops only side B while the frame — which asks either side — draws the shared
+  PAUSED list over a still-falling side A. Enter there is swallowed, Escape resumes
+  (`togglePause()` resumes *both* sides whenever either is paused), and the pointer is
+  the only way to activate a row of that menu.
+* `debug().status` is the live session status and is **null** outside play/duel; in a
+  duel it is **side A's** status, which is why a side-B pause is invisible through
+  this surface.
 * Geometries (`listGeom(count, y, rowH, x, w)`): title/others `62,16,62,116`;
   modes `listGeom(n, 26, 13, 8, PANEL.w)`; rules `listGeom(n, 120, 14, 8, 110)` plus
   a seed-nudge rect `{x:150,y:120,w:74,h:22}` (`x < 168` → −1 else +1); confirm
   `listGeom(n, 90, 14, 40, SCREEN.w-80)`; results `listGeom(n, 122, 15, 62, 116)`.
   Options sliders use `barX = geom.x + geom.w - 74` with ratio `(x-barX)/42`;
   left/right of the row centre steps the value.
-* Row text: title `PLAY / HIGH SCORES / OPTIONS`; play `RESUME / RESTART / OPTIONS /
-  MODE LIST`; confirm `ERASE EVERYTHING / KEEP MY RECORDS` (reset needs an explicit
-  second choice).
+* Row text: title `PLAY / HIGH SCORES / OPTIONS`; rules `START RUN / MODE LIST`;
+  play `RESUME / RESTART / OPTIONS / MODE LIST`; results `RUN AGAIN / MODE LIST`;
+  confirm `ERASE EVERYTHING / KEEP MY RECORDS` (reset needs an explicit second
+  choice).
+* Two settings-screen layout facts a test now pins, because they are arithmetic rather
+  than intent: the options grid (`{y: 25, rowH: 11}` × 14 rows) runs to y=179 on a
+  160-px screen, so its last row is drawn off-screen and its bands cover the DONE
+  button — a press on DONE on that screen steps a row instead of leaving; the controls
+  editor uses `rowH: 9`, which clears DONE by about a pixel, so the identical click
+  works there. See `PROJECT_STATE.md` § 6 before changing either grid.
 
 ## Shell layer (`src/app`) — the only DOM/WebAudio code
 

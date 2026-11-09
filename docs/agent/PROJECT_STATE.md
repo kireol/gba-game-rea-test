@@ -16,12 +16,13 @@ everything else, including the deliverable list.
 **Phase now:** the game is playable and documented (milestone report
 `docs/agent/MILESTONE-2026-11-08.md`, committed `fb3ffdf`); the open work is
 *coverage of the presentation layer*, in the order `TODO.md` § 1 sets out —
-`layout.ts`, `loop.ts`, `bindings.ts` and `render/blocks.ts` **done**, and
-`input.ts` **done** too (`src/tests/input.test.ts`, 24 tests, jsdom, 2026-11-08) —
-so the next file is `scenes.ts`, screen by screen, then render/font and audio,
-plus the font-table test
-(`TODO.md` § 2) and the second music loop (`TODO.md` § 3, the only brief
-requirement known to be unmet).
+`layout.ts`, `loop.ts`, `bindings.ts`, `render/blocks.ts` and `input.ts` **done**
+(`src/tests/input.test.ts`, 24 tests, jsdom, 2026-11-08), and the scene machine
+**done** too (§ 1 item 4: `scenes-harness.ts` + `scenes-menus.test.ts` 18 tests +
+`scenes-options.test.ts` 26 + `scenes-run.test.ts` 27, added 2026-11-08) — so the
+next file is `render/` + `font5x7` (§ 1 item 5), then `audio.ts` (item 6), plus
+the font-table test (`TODO.md` § 2) and the second music loop (`TODO.md` § 3, the
+only brief requirement known to be unmet).
 
 ## 2. Important architectural decisions
 
@@ -320,10 +321,14 @@ requirement known to be unmet).
     code repeated *within one row* (it IS reported, against itself — unreachable via
     the UI since both loaders de-duplicate), and `decrement` keeping `ArrowLeft` when
     `KeyZ` is stolen. Fixed in the tests; § 6 records the resulting known issues.
-  * Vitest does not typecheck. `npm run build` rejected two things the green tests
-    allowed: `readonly string[]` rows cannot be `push`ed (assert reference-inequality
-    instead), and `exactOptionalPropertyTypes` forbids passing `maxCatchUp: undefined`
-    explicitly (spread it in only when set). A green `npm test` is not a green build.
+  * Vitest does not typecheck — and it bit twice. `npm run build` rejected two
+    things the green tests allowed: `readonly string[]` rows cannot be `push`ed
+    (assert reference-inequality instead), and `exactOptionalPropertyTypes` forbids
+    passing `maxCatchUp: undefined` explicitly (spread it in only when set). The
+    scene suite hit it a third time: a value import used only as a *type*
+    (`import { Harness }`) is flagged unused and as TS1484 under
+    `verbatimModuleSyntax`, so type-only imports must be spelled `type`. A green
+    `npm test` is not a green build; always follow it with `npm run build`.
   * `input.test.ts` is the first unit file that tests the *browser contract*: every
     helper returns `event.defaultPrevented`, so each intent is pinned next to the
     prevention that belongs to it. It covers the bound-key dispatch, the bindings
@@ -354,6 +359,42 @@ requirement known to be unmet).
     `confirm`'s codes are shadowed. § 6 records what that costs in versus;
     `TODO.md` § 1 item 4 (`scenes-*.test.ts`) must drive menus with the cursor, not
     with `Enter`.
+* `scenes-menus.test.ts` (18), `scenes-options.test.ts` (26) and
+    `scenes-run.test.ts` (27) close `TODO.md` § 1 item 4 through one shared
+    `src/tests/scenes-harness.ts`. **The seam is `SceneHost`** — the scene machine's
+    only door out (`sfx` / `status` / `commit` / `announce` / `persisted` / `now`),
+    so a recording stub makes every screen and every persistence write assertable
+    with no DOM, no clock and no storage; `setPersisted()` re-seeds what the next
+    `loadBindings`/`loadPrefs` reads, `setClock()` makes a debounced save's commit
+    observable, `clearLog()` separates one interaction's sounds from the previous
+    screen's. Navigation helpers (`openModeList`, `openRules`, `startMode`,
+    `modeIndex`, `unlockAll`) keep the three files readable.
+  * Countdown facts pinned in three places at once: `COUNT_FRAMES` 45 ×
+    `COUNT_STEPS` ['3','2','1','GO'] = 180 withheld frames — the session is live and
+    `debug().status` says `playing` while `pieces` stays 0 — and `advance` emits one
+    sound **per label change per call**: four 45-frame calls give
+    `['menu-move','menu-move','menu-confirm','menu-confirm']`, one 180-frame call
+    gives just `['menu-confirm']`.
+  * `advance(n)` has a sharper edge than the browser can hit: the countdown branch
+    consumes the whole batch and returns, so frames past the end of the count are
+    **discarded**, not carried into the run. A dead-run topout therefore needs
+    `advance(180)` and then a second `advance(9000)`; the one-call form leaves the
+    stack untouched (observed: `pieces` still 0, RUSH clock still `02:30`). Only a
+    batched caller can hit it — the app pumps one frame per animation tick — but a
+    future replay driver would. § 6.
+  * Nine presentation findings came out of these three files and are written up in
+    § 6: the options grid overflowing past y=160 (which also buries the bindings
+    editor's DONE button under row 11's hit band), the blank accessibility
+    announcement on every options row, `CONTROLS` never returning to OPTIONS,
+    BACKSPACE binding despite its own hint, a stolen code silently emptying another
+    row, `Delete` writing an unchanged table while claiming a reset, the dead
+    `optionsReturn === 'bindings'` branch, the stranded play scene, and the
+    player-2 pause in versus whose menu is drawn but cannot be driven by keyboard.
+  * Harness lesson worth keeping: `session.input()` returns void and the scene
+    machine routes sounds from the events that the **next** `advance()` returns, so
+    a hold *click* is silent until the following frame — assert it with
+    `pointer(...) → advance(1)`, not by reading the log immediately (a hard drop, by
+    contrast, locks synchronously).
 
 ## 4. In progress
 
@@ -562,13 +603,23 @@ requirement known to be unmet).
      capture ahead of the bindings, right/middle button and wheel mapping with its
      deadzone, blur and visibility handling, `preventDefault` not eating the page.
      What it turned up is in § 6.
-  3. `src/ui/scenes.ts` navigation through a stub `SceneHost` — the biggest
-     untested surface and the one the brief cares about: title's 3 rows →
-     modes/scores/options, a locked mode refusing with `rotate-fail` + `LOCKED`
-     banner instead of navigating, `startRun` seeding from `lastSeed` vs
-     `randomSeed`, countdown withholding frames, options cycling feeding
-     `configFor`, the bindings capture/rebind/unbind flow, reset-progress needing
-     confirmation, the duel pause list. **← next**
+  3. **Done 2026-11-08** — `src/ui/scenes.ts` navigation through a stub
+     `SceneHost` (`scenes-harness.ts` + `scenes-menus.test.ts` 18 +
+     `scenes-options.test.ts` 26 + `scenes-run.test.ts` 27). Every row the list
+     above asked for is pinned: title's 3 rows → modes/scores/options, a locked
+     mode refusing with `rotate-fail` + the announce (its `LOCKED` banner is set
+     but never drawn — § 6), `startRun` seeding from `lastSeed` vs `randomSeed`,
+     countdown withholding frames, options cycling feeding `configFor`, the
+     bindings capture/rebind/unbind flow, reset-progress needing confirmation, and
+     the duel pause list. Nine findings came out of it (§ 6); § 3 has the harness
+     and countdown details. Not covered: the rules-screen *scroll*, and the fact
+     that `debug()` reads side A only in duel.
+
+     **← next, per `TODO.md` § 1 — that section is the order a resuming session
+     follows, and its next item is 5: `render.test.ts` + `font5x7.test.ts`, then
+     item 6, `audio.test.ts` with a fake `AudioContext`. Item 4 below covers the
+     same layer from the other end and is an equally valid entry point; keep only
+     one "**← next**" marker live at a time.**
   4. `src/ui/widgets.ts` (`rowUnderPoint`, `menuRects`, `addField`),
      `src/ui/options.ts`, `src/ui/format.ts` (`mmss`, score padding).
   5. **Done 2026-11-08** — `src/engine/bindings.ts` (`normalizeBindings`, `rebind`,
@@ -643,33 +694,39 @@ requirement known to be unmet).
    and tested**; the module contract and every mode-specific rule are pinned, and
    the suite was mutation-checked as described in § 3.
 4. UI: scene/menus state machine with mouse hit-testing, options, bindings
-   editor, rules screens, results, pause. **Written, and driven end to end by the
-   browser suite; no unit tests of its own yet** — see § 4 items 3–4. The bindings
-   *tables* the editor writes are now pinned (`bindings.test.ts`); the editor
-   screen itself is not.
+   editor, rules screens, results, pause. **Written, driven end to end by the
+   browser suite, and pinned by 71 unit tests of its own since 2026-11-08**
+   (`scenes-menus.test.ts` 18, `scenes-options.test.ts` 26, `scenes-run.test.ts` 27,
+   over `scenes-harness.ts`; § 3). What it still does not cover: the rules-screen
+   *scroll* and the `LOCKED` banner that `go('modes')` sets but never draws (§ 6),
+   and the nine findings § 6 lists under "Found while pinning the scene machine" —
+   those are behaviour to decide on, not coverage gaps.
 5. Render (own 5×7 pixel font, procedural art), audio (WebAudio synth, original
    material), fullscreen + responsive scaling with correct aspect. **Written and
    browser-verified for scaling** (`layout.test.ts` 14 tests + the e2e viewport
    test). `toggleFullscreen` is only proven not to throw where the API is missing;
    a real fullscreen transition is untested. Font/art/audio have no tests.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
-   tests. **306 unit tests across 18 files, all green. Browser: 7 Playwright
+   tests. **377 unit tests across 21 files, all green. Browser: 7 Playwright
    tests green** on "Chrome Headless Shell 158.0.8127.18" (already installed, no
-   `playwright install` needed). Of the 306, **244 are rules/engine/gameplay**
-   (including `bindings.ts` 18 and `persistence.ts` 26) and 62 are not:
+   `playwright install` needed). Of the 377, **244 are rules/engine/gameplay**
+   (including `bindings.ts` 18 and `persistence.ts` 26) and 133 are not:
    `render/blocks.ts` 8, `layout.ts` 14 (the framebuffer scaling), `loop.ts` 16,
-   `input.ts` 24. Still open inside this item: the presentation-layer unit tests
-   in § 4 (`scenes.ts` next, then render/font and audio), `src/gameplay/assets.ts`,
-   and a Playwright assertion for the real `localStorage` round-trip (the
-   persistence suite covers that with a double only, so item 2's browser-storage
-   caveat still stands).
+   `input.ts` 24, `scenes.ts` 71 (three files over one harness). Still open inside
+   this item: the presentation-layer unit tests in § 4 (`render/` + `font5x7` next,
+   then audio), `src/gameplay/assets.ts`, and a Playwright assertion for the real
+   `localStorage` round-trip (the persistence suite covers that with a double only,
+   so item 2's browser-storage caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
    `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
-   green on 2026-11-08** (latest run, after `input.test.ts` and the doc sync that
-   came with it, `/tmp/n_*.txt`):
+   green on 2026-11-08** (latest run, after the scene suite and the doc sync that
+   came with it):
    build/typecheck `BUILD_EXIT=0` (35 modules, 68.49 kB / 24.62 kB gzip); vitest
-   `306 passed (306)` in 18 files; Playwright `7 passed (23.4s)`; sweep
-   `PASS — no blocking hits`, 92 files, 3 acknowledged. Re-run all five after any
+   `377 passed (377)` in 21 files; Playwright `7 passed`; sweep
+   `PASS — no blocking hits`, 96 files, 3 acknowledged. (Those vitest numbers are
+   from the pre-commit `npm test`; the four gate commands are re-run verbatim in the
+   commit message's verification note, and `docs/architecture/build.md` keeps the
+   same table per gate.) Re-run all five after any
    change — `build` runs `typecheck` first, and `test:e2e`'s webServer runs `build`,
    so one type error anywhere under `src/` or `tests/` breaks the browser suite too.
    Vitest itself does **not** typecheck: a green `npm test` can still hide a build
@@ -822,6 +879,79 @@ user, since the tests assert the current shape deliberately.
   unconditional, not "only outside the test harness" — the harness reads
   `window.__orbit`, which `dispatch` fills, so swallowing is what lets the browser
   suite prove the app owns the key.
+
+**Found while pinning the scene machine (2026-11-08, `scenes-*.test.ts`).** Nine new
+observations plus one carried gap, each reached by a test that now passes; every one
+is asserted either directly or as the precondition of a passing assertion, so
+"fixing" one means changing a test on purpose. None of them breaks a run — they are
+layout, settings, and versus-pause behaviour. Line numbers are `src/ui/scenes.ts` as
+of this writing.
+
+* **The options grid runs off the bottom of the screen.** `optionGeom` (620) is
+  `{ x: PANEL.x, y: 25, rowH: 11, count: OPTION_ROWS.length }` with 14 rows, so the
+  last band ends at y=179 on a 160-px screen and `ERASE RECORDS` is drawn at y ≥ 160.
+  The keyboard cursor still visits it and the announcer still speaks it, so the row
+  is reachable by every route except the pointer.
+* **The same grid swallows the DONE button.** `doneRect` (628) is
+  `{ x: SCREEN.w - 42, y: SCREEN.h - 11, w: 34, h: 10 }` → y 149..159, and
+  `pointer()` tests `rowUnderPoint` *before* `doneRect` (1141–1176). On options that
+  click lands in band 11 and flips `INFINITE THINKING`, staying on the screen; the
+  settings screen has no pointer way out at all, only Escape. It works on the
+  controls editor because that grid (inline literal at 1144) uses `rowH: 9`, which
+  clears the button by about one pixel — so the difference between the two screens
+  is a pixel of arithmetic, not intent.
+* **An action row persists a record it did not change, and announces a blank.**
+  `changeOption` commits whatever `stepOption` returned and an action row returns its
+  input untouched: two `commit`s for a nudge right-and-back, plus
+  `` announce(`${row.label} ${optionValue(row, prefs)}`) `` (837 by keyboard, 1165 by
+  pointer) → `'CONTROLS '` with a trailing gap, which is what a screen reader gets.
+* **`optionsReturn` has one writer, so the controls editor forgets how it arrived.**
+  Only `openOptions` (846) assigns it; `openBindings` (840) leaves it alone. DONE in
+  the editor therefore goes to whichever scene opened OPTIONS — the title, when you
+  came in through the title — and `optionsReturn === 'bindings' ? 'options' : …`
+  (992) is a dead branch.
+* **The capture hint promises a key the capture handler does not honour.** It draws
+  `ANY KEY WORKS. BACKSPACE CLEARS` (1090), but `key()` special-cases only `Escape`
+  (1107) and `Delete` (1114), so Backspace is recorded like any other code
+  (`bindings.left === ['Backspace']`).
+* **Rebinding a code another row owns silently empties that row.** That is the
+  engine's documented steal (`rebind`, bindings group above), and the editor announces
+  only the row being edited: `MOVE LEFT IS NOW ARROWRIGHT`, while `bindings.right`
+  becomes `[]` with nothing said about it. Reachable in one click and two keystrokes.
+* **`Delete` commits an unchanged table while claiming a reset.** The branch at 1114
+  hands `unbind` the literal word `'Delete'`, but `unbind` removes *one code by
+  name*, and no row contains that string. So the table is byte-identical, one `commit`
+  fires anyway, and the announcement reads `MOVE LEFT RESET TO ITS DEFAULTS`. The real
+  factory reset is the RESTORE box (1178); the row's own "BACKSPACE CLEARS" hint is
+  doubly wrong (previous bullet).
+* **`advance(n)` spends a whole batch on the countdown and drops the rest** — § 3 has
+  the detail and the observed shape. Not reachable from the app, which pumps one frame
+  per animation tick; reachable from any future replay driver.
+* **OPTIONS from the play pause menu strands the run.** `openOptions('play')` drops
+  the session (documented in `docs/architecture/interfaces.md`), and Back from
+  OPTIONS lands on `'play'` with nothing to draw and nothing to handle: every intent
+  false, every pointer false, `blur()` a no-op, `debug()` reporting `status: null`
+  and `level: 0`. A reload is the only way out. Pinned with a `TODO(v0.1.2)` marker
+  in `scenes-run.test.ts`; the honest fix is either a resume-the-run affordance or
+  the pause menu not offering OPTIONS at all.
+* **A player-two pause in duel is drawn as though it were player one's, and only the
+  pointer can drive it.** The gate that decides whether the pause menu owns the
+  keyboard is `menuActive()` (803), which in duel asks **side A** alone. So player
+  two's PAUSE key never opens that gate: it falls through as an ordinary play intent
+  into side B's session and stops only that half — while the frame still draws the
+  shared PAUSED list, because it asks either side. Result: the menu is on screen with
+  A still falling, A's Enter is swallowed (`press('confirm')` false, and A receives
+  it as a play intent that is not one), and Escape lands on `resume()` →
+  `duel.togglePause()`, which is "if either side is paused, resume both"
+  (`src/gameplay/duel.ts:83`), so it unpauses. The row hit test does not consult
+  `menuActive()`, so the pointer is the only input that can activate that list — and
+  RESUME goes through the same `togglePause()`, resuming both halves whatever the
+  click's owner. `debug()` (1316) reads `duel.a` too, so a B-only pause is invisible
+  to both this suite and the `?test=1` browser surface.
+* **Carried over from the rules screen: `setBanner('LOCKED', 60)` (864) is set on the
+  way into the mode list but the modes frame never draws that banner.** The refusal is
+  still audible (`rotate-fail` + `… IS LOCKED. CLEAR THE MODE BEFORE IT FIRST.`), so
+  this is a visual-only gap; still the only screen that sets a banner nobody renders.
 
 ## 7. Important files
 
