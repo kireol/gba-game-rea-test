@@ -27,6 +27,12 @@ unused, see § 4), plus the second music loop (`TODO.md` § 3, the only brief
 requirement known to be unmet). The most recent change is not coverage: `↑` now
 turns the piece clockwise inside a live run (§ 2, § 3).
 
+**Docs/publication step (2026-11-09):** the root `README.md` is now the part-3
+experiment write-up and the game's manual moved to `GAME_README.md` (§ 3). The
+repository is being published to its own remote as the third test in a series; no
+game code changed, and the four gates were re-run green afterwards. Remaining
+product work is unchanged from the paragraph above.
+
 ## 2. Important architectural decisions
 
 * **Rules engine separate from rendering.** `src/engine/` (board, pieces,
@@ -511,8 +517,48 @@ turns the piece clockwise inside a live run (§ 2, § 3).
     `npm run test:e2e` **9 passed**, `npm run build` exit 0 (35 modules, 68.51 kB /
     24.61 kB gzip), `npm run report` **PASS**. Docs that record these counts
     (`build.md`, `interfaces.md`, `TODO.md`, § 5 below) were synced in the same change;
-    `README.md`'s controls table and `docs/architecture/interfaces.md` carry the new
-    mapping.
+    the controls table carrying the new mapping moved to `GAME_README.md` (see below),
+    and `docs/architecture/interfaces.md` still carries it.
+* **2026-11-09 — root README split; the repo becomes a public experiment write-up.**
+  * `git mv README.md GAME_README.md` (content untouched, 202 lines): that file is the
+    game's own documentation. `GAME_README.md` never refers to itself as "the README",
+    so the rename needed no follow-up edit inside it.
+  * New `README.md` is the **part 3** write-up of a three-part experiment (part 1:
+    one prompt → one HTML file, `kireol/qwen3.8_GTA_one_shot_test`; part 2: same task
+    at 128K, `kireol/Qwen3.8-GTA-1-Test-2`; part 3: reproduce a game from a ROM using
+    only REA-style black-box study). It carries the verbatim operator prompt, the
+    verbatim hardware/model block, the five screenshots below, the measured git timing
+    table, and a section that states plainly what the study pass did *not* prove.
+    The directory name this repo was developed in is deliberately never written into
+    it.
+  * `docs/images/01-title…05-play-duel.png` are now **tracked** (1920×1280 window
+    captures of *this* build, taken 2026-11-09). This does not contradict the
+    "reference screenshots are gitignored" rule: the ignored folder is
+    `docs/reverse-engineering/screenshots/`, and nothing in `docs/images/` came from
+    the reference. `.png` is outside the sweep's `TEXT_EXT`, so the images are not
+    scanned (verified: a tracked-file sweep over 103 files PASSes with only the 3
+    acknowledged hits).
+  * Total elapsed measured from git for the README: `git log --reverse --format=%aI`
+    plus per-commit `--numstat`, excluding `package-lock.json` — **23 commits,
+    30 h 27 m 10 s** between the root commit (`cf75ac7`, 2026-11-07T10:55:07+01:00)
+    and `26155a1` (2026-11-08T17:22:17+01:00). Splitting the interval that precedes
+    each commit by whether that commit touches `src/` outside `src/tests/`: 16 of 23
+    commits add no game code and their intervals cover 20 h 01 m 52 s (66%). The
+    root commit means this is a floor, not a measurement — emulator bring-up predates
+    the repo. Script kept at `/tmp/span4.py` (throwaway).
+  * Four claims written into the new README and then disproven by checking the repo,
+    all corrected in place: the fresh install unlocks **one** mode, not two
+    (`withUnlocks`, `src/gameplay/persistence.ts:226`); the mode-list footer is the
+    plugin's `summary` field (`src/ui/scenes.ts:390`), not a per-mode UI string table;
+    `docs/architecture/decisions.md` runs **D1–D11**, not D1–D8; "six of the eight
+    largest commits are test-only" was wrong (strictly test-only is 1 of 23 — the
+    real figure is 16 of 23 adding no game code, above). `docs/reverse-engineering/`
+    is 7 topic notes + the unknowns ledger, so the older "8 documents" phrasing in § 3
+    counts the ledger as a document.
+  * Re-verified after the doc change: `npm test` 431/431 in 23 files,
+    `npm run build` exit 0 (35 modules, 68.51 kB), `npm run test:e2e` 9 passed,
+    `npm run report` PASS, and `git ls-files | xargs node scripts/forbidden-name-sweep.mjs`
+    PASS over 103 tracked files.
 
 ## 4. In progress
 
@@ -1122,12 +1168,33 @@ what the renderer already does — worth reading before anyone re-derives them:
   prefer a `drawImage` blit and fall back to flat `fillRect` when `document` is
   undefined. If that guard ever changes, the fill-count rows in both suites stop
   describing the browser — that is the first seam to re-check.
+* **`↓` does nothing in menus, and it is load-bearing for long lists.** In
+  `DEFAULT_BINDINGS`, `soft-drop` and `down` both claim `ArrowDown`; `intentForCode`
+  (`src/engine/bindings.ts:112`) walks `BINDABLE_INTENTS` and returns the **first**
+  claim, and `soft-drop` is index 2 while `down` is 13, so the scene machine's
+  `case 'down'` can never fire with default bindings. Practical effect: the mode list
+  and any list longer than the screen cannot be scrolled downward with `↓`; `↑` wraps
+  and reaches the same rows, which is how the `docs/images/` captures were navigated.
+  `src/tests/bindings.test.ts:52` pins `intentForCode(DEFAULT_BINDINGS, 'ArrowDown')`
+  to `'soft-drop'`, so this is deliberate-by-test, not an oversight — fixing it means
+  changing shipped controls (or giving menus a context-aware claim order), which is a
+  decision for the operator, not a docs change. `↑` *is* reachable in menus: it is the
+  cursor's up key and `remap()` gives it back to the cursor when a menu is open.
+* **No browser coverage for list scrolling in either direction.** `playable.spec.ts`
+  asserts that the mode-list frame's *text* contains all seven labels; nothing in the
+  browser suite presses `↓` inside a list. So "arrow-down scrolls the mode list" has
+  never been observed anywhere — and per the defect above it is false with default
+  bindings anyway. If someone fixes the binding claim, that fix needs a browser test
+  that moves a cursor down past the fold, not another text-membership assertion.
 
 ## 7. Important files
 
 | File | Purpose |
 | --- | --- |
 | `prompt.md` | the user's brief (objectives, licence rules, milestones) — read it |
+| `README.md` | the **part-3 experiment** write-up (public front page): prompt, hardware, measured git timing, what the study pass did and did not prove. Not the game's manual |
+| `GAME_README.md` | the game's own documentation: quick start, controls, modes, rules tags, save model, licence |
+| `docs/images/*.png` | five tracked screenshots of *this* build, embedded by `README.md`. `docs/reverse-engineering/screenshots/` stays ignored |
 | `docs/reverse-engineering/*.md` | the verified rule set; the spec for `src/modes` |
 | `docs/reverse-engineering/reverse-engineering-unknowns.md` | what we do NOT know, with the method to settle each |
 | `docs/game-design.md` | our game's rules: what is inherited, assumed, invented |

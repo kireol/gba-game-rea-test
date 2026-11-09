@@ -4,6 +4,33 @@ Human-readable map of `git log`. The commits are the authoritative record and ea
 one carries the detail; this file is ordered newest-first and says *why* each step
 happened. No git tags exist yet, so versions below are milestones, not releases.
 
+## [Unreleased] — 2026-11-09
+
+### Changed — the front page became the experiment write-up; the manual moved
+This repository is the third run of a three-part experiment on what a model can do
+with a black-box study pass, so the root `README.md` now argues that case: the operator
+prompt verbatim, the hardware and model block, the elapsed time measured from
+`git log`, the screenshots, and a section that says plainly what the study pass did
+**not** recover. The game's own documentation is unchanged and now lives in
+`GAME_README.md` (`git mv`, no content edits).
+
+* No game code, tests, or licence rules changed. `npm test` (431), `npm run build`
+  (35 modules), `npm run test:e2e` (9) and `npm run report` were re-run afterwards, and
+  the sweep was run a second time over the *tracked* file list so the new Markdown was
+  covered by the gate that guards protected names.
+* Five screenshots of this build are tracked in `docs/images/`. The reference's own
+  screenshots stay ignored, and nothing in the tracked set came from the reference.
+* Writing the README surfaced four claims that the repo contradicted, all fixed before
+  committing: a fresh install unlocks one mode rather than two, the mode-list footer is
+  the plugin's own `summary` text, the decision log runs to D11 not D8, and the
+  "most commits are test-only" framing was wrong — the measured shape is 16 of 23
+  commits adding no game code, covering 66% of the elapsed span.
+* Recorded in `docs/agent/PROJECT_STATE.md` § 6: `↓` is unreachable as CURSOR DOWN with
+  default bindings, because `SOFT DROP` claims `ArrowDown` and sits earlier in the
+  intent list. The list scrolls upward by wrapping instead. It is pinned by
+  `src/tests/bindings.test.ts`, so it is a documented consequence and a scheme decision
+  rather than a docs fix.
+
 ## [Unreleased] — 2026-11-08
 
 ### Changed — `↑` turns the piece, so a run needs no letter keys
