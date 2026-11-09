@@ -14,15 +14,18 @@ Authoritative brief: `prompt.md` (user-supplied). Its licence section overrides
 everything else, including the deliverable list.
 
 **Phase now:** the game is playable and documented (milestone report
-`docs/agent/MILESTONE-2026-11-08.md`, committed `fb3ffdf`); the open work is
-*coverage of the presentation layer*, in the order `TODO.md` § 1 sets out —
-`layout.ts`, `loop.ts`, `bindings.ts`, `render/blocks.ts` and `input.ts` **done**
-(`src/tests/input.test.ts`, 24 tests, jsdom, 2026-11-08), and the scene machine
-**done** too (§ 1 item 4: `scenes-harness.ts` + `scenes-menus.test.ts` 18 tests +
-`scenes-options.test.ts` 26 + `scenes-run.test.ts` 27, added 2026-11-08) — so the
-next file is `render/` + `font5x7` (§ 1 item 5), then `audio.ts` (item 6), plus
-the font-table test (`TODO.md` § 2) and the second music loop (`TODO.md` § 3, the
-only brief requirement known to be unmet).
+`docs/agent/MILESTONE-2026-11-08.md`, committed `fb3ffdf`), and ships as two
+artifacts — the served `dist/` and the double-clickable `dist/orbit-drop.html`; the
+open work is *coverage of the presentation layer*, in the order `TODO.md` § 1 sets
+out — `layout.ts`, `loop.ts`, `bindings.ts`, `render/blocks.ts`, `input.ts`, and
+`render/renderer.ts` + `font5x7.ts` with the glyph-table check (`TODO.md` § 2) are
+**done**, and the scene machine is **done** too (§ 1 item 4: `scenes-harness.ts` +
+`scenes-menus.test.ts` 18 tests + `scenes-options.test.ts` 26 +
+`scenes-run.test.ts` 30, added 2026-11-08) — so the next file is `audio.ts`
+(§ 1 item 6; `src/tests/audio-harness.ts` is already in the tree, untracked and
+unused, see § 4), plus the second music loop (`TODO.md` § 3, the only brief
+requirement known to be unmet). The most recent change is not coverage: `↑` now
+turns the piece clockwise inside a live run (§ 2, § 3).
 
 ## 2. Important architectural decisions
 
@@ -58,6 +61,18 @@ only brief requirement known to be unmet).
   is the served static site, `dist/orbit-drop.html` is the double-clickable single
   file, also loaded over `file://` by the browser suite. Nothing in either needs
   Node at run time; Node is build-time only.
+* **A key's role is chosen by the screen, not by the binding table.** `remap()` in
+  `src/ui/scenes.ts` reads Enter as CONFIRM outside a run and PAUSE inside one, Escape
+  as BACK outside and PAUSE inside, and — added 2026-11-08 — `↑` as the list cursor's
+  step-up outside a run and ROTATE CW inside a live one (`menuActive()` hands it back
+  to the pause list). Deliberate, and cheaper than the alternative: putting `ArrowUp`
+  in `rotate-cw`'s code list would have made `KeyX` move the menu cursor too, because
+  `input.ts` dispatches the *bound* intent, and `X` resolves to `rotate-cw` for menus
+  as well. Keeping the binding untouched means the key-bindings screen, the conflict
+  list, player two's map and the versus footer need no edits, and both rows stay
+  rebindable — at the cost of a behaviour the in-game binding screen does not advertise.
+  Counter-clockwise has no cursor key because `↓` already owns the soft drop; player
+  two keeps `W`, whose `up` intent is unreachable in its own map.
 
 ## 3. Completed work (verified)
 
@@ -473,6 +488,31 @@ only brief requirement known to be unmet).
     type is TS1024 — a `readonly` member has to be a property
     (`readonly debug: () => Debug`). The typecheck-before-e2e coupling (§ 5 item 7)
     caught the second one before any browser started.
+* **`↑` turns the piece clockwise inside a live run** (2026-11-08, from the user's
+  "instead of wasd, can we change the controls to use the cursor keys"). The request
+  was ambiguous — player one was *already* on the cursor keys, and moving player two
+  onto them collides on one keyboard — so it was asked, and the answer was
+  "Player 1: rotation onto cursor keys": keep `←` `→` move and `↓` soft drop, add
+  cursor-key rotation, leave the WASD map alone so versus still works.
+  * One line inside `remap()`'s in-run branch —
+    `return kind === 'up' ? 'rotate-cw' : kind;` — and why that route rather than a
+    `bindings.ts` edit is in § 2. `X` and `Z` still rotate both ways; the in-run pause
+    menu reclaims `↑` because the remap is gated on `menuActive()`; the binding screen,
+    the conflict list and the versus footer were untouched and stay truthful.
+  * Three tests in `src/tests/scenes-run.test.ts` (27 → 30), all asserted through the
+    paint model (`frame().fields[i].active.rot`) rather than a DOM: the cursor key
+    produces the same quarter-turn as the bound rotation key on a second run from the
+    same seed, guarded against vacuity by `expect(rot).not.toBe(spawn)` — a seed whose
+    first piece is the square would otherwise pass with rotation deleted; paused, `↑`
+    steps the pause list, and the test leaves the screen through the one row whose
+    destination is observable from outside (`MODE LIST` → `modes`) so the result says
+    which role applied; in a duel it turns side A and not side B.
+  * Verified: `npm run typecheck` clean, `npm test` **431 passed (431)** in 23 files,
+    `npm run test:e2e` **9 passed**, `npm run build` exit 0 (35 modules, 68.51 kB /
+    24.61 kB gzip), `npm run report` **PASS**. Docs that record these counts
+    (`build.md`, `interfaces.md`, `TODO.md`, § 5 below) were synced in the same change;
+    `README.md`'s controls table and `docs/architecture/interfaces.md` carry the new
+    mapping.
 
 ## 4. In progress
 
@@ -683,7 +723,7 @@ only brief requirement known to be unmet).
      What it turned up is in § 6.
   3. **Done 2026-11-08** — `src/ui/scenes.ts` navigation through a stub
      `SceneHost` (`scenes-harness.ts` + `scenes-menus.test.ts` 18 +
-     `scenes-options.test.ts` 26 + `scenes-run.test.ts` 27). Every row the list
+     `scenes-options.test.ts` 26 + `scenes-run.test.ts` 30). Every row the list
      above asked for is pinned: title's 3 rows → modes/scores/options, a locked
      mode refusing with `rotate-fail` + the announce (its `LOCKED` banner is set
      but never drawn — § 6), `startRun` seeding from `lastSeed` vs `randomSeed`,
@@ -700,6 +740,14 @@ only brief requirement known to be unmet).
      last module in the project with no test in either environment. Item 4 below covers
      the same layer from the other end and is an equally valid entry point; keep only one
      "**← next**" marker live at a time.**
+
+     **Half-written already:** `src/tests/audio-harness.ts` (421 lines) is that item's
+     fake `AudioContext` — it records a node *graph* rather than naming the buses, and
+     documents three deliberate unfaithfulnesses (a clock that only moves when a test
+     advances it, a `state` that never changes by itself, buffers that start as zeros).
+     It is **untracked, imported by nothing, and unverified**: no `audio.test.ts`
+     exercises it, and this session neither wrote it nor committed it. Read it
+     before writing rows against it.
   4. `src/ui/widgets.ts` (`rowUnderPoint`, `menuRects`, `addField`),
      `src/ui/options.ts`, `src/ui/format.ts` (`mmss`, score padding).
   5. **Done 2026-11-08** — `src/engine/bindings.ts` (`normalizeBindings`, `rebind`,
@@ -781,8 +829,8 @@ only brief requirement known to be unmet).
    the suite was mutation-checked as described in § 3.
 4. UI: scene/menus state machine with mouse hit-testing, options, bindings
    editor, rules screens, results, pause. **Written, driven end to end by the
-   browser suite, and pinned by 71 unit tests of its own since 2026-11-08**
-   (`scenes-menus.test.ts` 18, `scenes-options.test.ts` 26, `scenes-run.test.ts` 27,
+   browser suite, and pinned by 74 unit tests of its own since 2026-11-08**
+   (`scenes-menus.test.ts` 18, `scenes-options.test.ts` 26, `scenes-run.test.ts` 30,
    over `scenes-harness.ts`; § 3). What it still does not cover: the rules-screen
    *scroll* and the `LOCKED` banner that `go('modes')` sets but never draws (§ 6),
    and the nine findings § 6 lists under "Found while pinning the scene machine" —
@@ -796,24 +844,24 @@ only brief requirement known to be unmet).
    now the only thing on this line with no test of any kind — which is `TODO.md` § 1
    item 6.
 6. Vitest suite covering every mechanic the brief lists; Playwright browser
-   tests. **428 unit tests across 23 files, all green. Browser: 7 Playwright
+   tests. **431 unit tests across 23 files, all green. Browser: 9 Playwright
    tests green** on "Chrome Headless Shell 158.0.8127.18" (already installed, no
-   `playwright install` needed). Of the 428, **244 are rules/engine/gameplay**
-   (including `bindings.ts` 18 and `persistence.ts` 26) and 184 are not:
+   `playwright install` needed). Of the 431, **244 are rules/engine/gameplay**
+   (including `bindings.ts` 18 and `persistence.ts` 26) and 187 are not:
    `render/blocks.ts` 8, `render/renderer.ts` 33, `render/font5x7.ts` 18,
    `layout.ts` 14 (the framebuffer scaling), `loop.ts` 16, `input.ts` 24,
-   `scenes.ts` 71 (three files over one harness). Still open inside
+   `scenes.ts` 74 (three files over one harness). Still open inside
    this item: the last presentation-layer suite in § 4 (`src/audio/engine.ts`),
    `src/gameplay/assets.ts`, and a Playwright assertion for the real
    `localStorage` round-trip (the persistence suite covers that with a double only,
    so item 2's browser-storage caveat still stands).
 7. Verify `npm run typecheck`, `npm run test`, `npm run build`,
    `npm run test:e2e`, `npm run report` and report results verbatim. **All five run
-   green on 2026-11-08** (latest run, after the paint-layer suites and the doc sync
-   that came with them):
-   build/typecheck `BUILD_EXIT=0` (35 modules, 68.49 kB / 24.60 kB gzip); vitest
-   `428 passed (428)` in 23 files; Playwright `7 passed (23.3s)`; sweep
-   `PASS — no blocking hits`, 99 files, 3 acknowledged. (Those vitest numbers are
+   green on 2026-11-08** (latest run, after the cursor-key rotation and the doc sync
+   that came with it):
+   build/typecheck `BUILD_EXIT=0` (35 modules, 68.51 kB / 24.61 kB gzip); vitest
+   `431 passed (431)` in 23 files; Playwright `9 passed (25.0s)`; sweep
+   `PASS — no blocking hits`, 102 files, 3 acknowledged. (Those vitest numbers are
    from the pre-commit `npm test`; the four gate commands are re-run verbatim in the
    commit message's verification note, and `docs/architecture/build.md` keeps the
    same table per gate.) Re-run all five after any
@@ -1088,12 +1136,12 @@ what the renderer already does — worth reading before anyone re-derives them:
 | `tools/re/` | the analysis harness (mGBA Lua bridge + vision classifier) |
 | `scripts/{start-mgba,load-bridge}.sh` | launch mGBA with the bridge on 127.0.0.1:8777 |
 | `scripts/forbidden-name-sweep.mjs` | licence gate, `npm run report`; run before any milestone claim. `ACKNOWLEDGED` is keyed by path — check the printed exceptions every run |
-| `src/ui/scenes.ts` | every screen, the menu cursor, `pointer()`, `activate()`, and `debug()` — the largest file and the least tested |
+| `src/ui/scenes.ts` | every screen, the menu cursor, `pointer()`, `activate()`, `remap()` (the screen-decides-key-role rule, § 2) and `debug()` — the largest file in the project |
 | `src/app/main.ts` | composition root; publishes `window.__orbit` only when the URL has `?test=1` |
 | `src/app/layout.ts` | the only place window size touches the game; `computeScale`, `toFramebuffer` |
 | `src/app/loop.ts` | wall-clock → rules frames: `STEP_MS`, `MAX_CATCHUP`, the injectable clock/scheduler |
 | `src/render/frame.ts` | the frame model the renderer draws and the e2e tests assert against |
-| `tests/e2e/playable.spec.ts` | the 7 browser tests; reads the app through `?test=1`, never screenshots |
+| `tests/e2e/playable.spec.ts` | the 7 served-page browser tests; reads the app through `?test=1`, never screenshots |
 | `tests/e2e/single-file.spec.ts` | the 2 `file://` tests: the single-file page boots, plays, and fetches nothing but itself |
 | `scripts/inline-single-file.mjs` | `npm run build:single`'s second half — folds the bundle into `dist/orbit-drop.html`; exit 1 on any leftover external reference |
 | `src/tests/layout.test.ts` | jsdom docblock example + the framebuffer scaling tests |
@@ -1101,4 +1149,6 @@ what the renderer already does — worth reading before anyone re-derives them:
 | `src/app/input.ts` | browser events → intents: key mapping and capture, `SWALLOWED`, the `event.repeat` drop, pointer/wheel, focus |
 | `src/tests/bindings.test.ts` | the whole binding table: resolution order, conflicts, normalize/rebind/unbind |
 | `src/tests/input.test.ts` | jsdom: real events at the real listeners, pinning both the dispatched `Intent` and `defaultPrevented` |
+| `src/tests/scenes-harness.ts` | the recording `SceneHost` stub behind all three `scenes-*.test.ts` files — no DOM, no clock, no storage |
+| `src/tests/audio-harness.ts` | **untracked WIP** — the fake `AudioContext` for `TODO.md` § 1 item 6. Imports nothing, imported by nothing, unverified. See § 4 |
 | `vite.config.ts` / `playwright.config.ts` | build (240×160 canvas app) / `webServer: npm run build:single && npm run preview` — hence the typecheck coupling, and why e2e exercises the single file too |

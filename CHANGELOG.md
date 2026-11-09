@@ -6,6 +6,31 @@ happened. No git tags exist yet, so versions below are milestones, not releases.
 
 ## [Unreleased] — 2026-11-08
 
+### Changed — `↑` turns the piece, so a run needs no letter keys
+Player one already drove a run's movement with `←` `→` `↓`; `↑` was only ever a list
+cursor. Inside a live run it now turns the piece clockwise, so the cursor cluster alone
+is playable (`X` and `Z` still rotate both ways, and nothing in the bindings table
+moved).
+
+* The change is one line of `remap()` in `src/ui/scenes.ts` — the screen machine's
+  existing "one key, two roles" switch, which already reads Enter as CONFIRM outside a
+  run and Escape as PAUSE inside one. `↑` stays bound to CURSOR UP and ROTATE CW stays
+  bound to `X`, so the key-bindings screen keeps showing both rows truthfully and a
+  rebind of either row still works; the in-run pause menu takes `↑` back as a cursor key
+  because the remap is gated on `menuActive()`.
+* Counter-clockwise deliberately has no cursor key: `↓` is the soft drop, so the
+  four-key cluster is full. Giving CCW a key would mean moving the soft drop, which is
+  a scheme change rather than an extra key.
+* Player two is untouched. Its `W` was already ROTATE CW (the bindings table resolves a
+  code to the row that comes first, and ROTATE CW precedes CURSOR UP), so `up` is
+  unreachable in that map and the versus footer is still accurate.
+* `scenes-run.test.ts` 27 → 30: the cursor key produces the same quarter-turn as the
+  bound rotation key on the same seed and is not a no-op; paused, `↑` steps the pause
+  list (wrapping to MODE LIST is the only row that leaves the screen, so the destination
+  reports which role applied); in a duel it turns side A and not side B.
+* Verified: typecheck clean, `npm test` `431 passed (431)` in 23 files, `npm run
+  test:e2e` `9 passed`, `build` green (68.51 kB / 24.61 kB gzip), sweep `PASS`.
+
 ### Added — one file that opens by double-clicking
 `npm run build:single` now emits `dist/orbit-drop.html` next to the served build: the
 production bundle inlined as a module script, so the game is a single ≈70 KB file that

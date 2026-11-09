@@ -104,6 +104,13 @@ Deliberate, declared differences and unavoidable ones, with the reason:
 Re-run on 2026-11-08 after the documentation pass; each gate is the project's own
 command, not an ad-hoc one.
 
+> **Superseded as a current count.** Everything below is the snapshot that pass
+> produced. The suite grew afterwards — `scenes-*.test.ts`, `render.test.ts`,
+> `font.test.ts`, `single-file.spec.ts` — and a controls change (`↑` turns the piece)
+> landed after it. The live numbers are `docs/agent/PROJECT_STATE.md` § 5 item 7 and
+> the gate table in `docs/architecture/build.md`; the latest run is 23 files /
+> **431** unit tests, **9** browser tests, sweep `PASS` over 102 files.
+
 | Gate | Command | Result |
 | --- | --- | --- |
 | Types | `npm run typecheck` (`tsc --noEmit`, strict) | clean, inside `npm run build` |

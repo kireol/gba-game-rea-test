@@ -1007,10 +1007,18 @@ export const createScenes = (host: SceneHost, initial: SaveData): Scenes => {
    * so one code resolves to both roles. Which role applies depends on the screen:
    * outside a live run Enter drives the list and Escape steps back out; inside one,
    * Enter pauses and Escape resumes.
+   *
+   * `up` follows the same rule: it is the list cursor's step-up key, and inside a
+   * live run it turns the piece clockwise, so `←` `→` `↓` `↑` drive a whole run
+   * without a fifth cursor-key row in the bindings table. Counter-clockwise keeps
+   * its own keys — `↓` is already the soft drop, so no cursor key is left to borrow.
    */
   const remap = (kind: Intent): Intent => {
     const inRun = scene === 'play' || scene === 'duel';
-    if (inRun && !menuActive()) return kind === 'back' ? 'pause' : kind;
+    if (inRun && !menuActive()) {
+      if (kind === 'back') return 'pause';
+      return kind === 'up' ? 'rotate-cw' : kind;
+    }
     return kind === 'pause' ? 'confirm' : kind;
   };
 

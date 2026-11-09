@@ -71,12 +71,19 @@ bindings**.
 | --- | --- | --- |
 | Move left / right | `←` `→` | `A` `D` |
 | Soft drop | `↓` | `S` |
+
 | Hard drop | `Space` | `F` |
-| Rotate clockwise | `X` | `W` |
+| Rotate clockwise | `↑` or `X` | `W` |
 | Rotate counter-clockwise | `Z` | `E` |
 | Hold piece | `Right Shift` or `C` | `Q` |
 | Pause | `Enter` | `P` |
 | Confirm / back | `Enter` · `Esc` or `Backspace` | `Enter` · `Esc` |
+
+Only `↑` in the rows above is not a binding row. It is the menu cursor's up key, which
+the screen machine reads as clockwise rotation while a run is live and hands back to
+the cursor when the in-run menu is open. **Options → Key bindings** therefore lists
+`X` as Rotate clockwise, and rebinding it leaves `↑` still turning the piece — the
+cursor cluster is a second name for the same actions, not a fifth row.
 
 The mouse is a complete second input path, not an afterthought — two browser tests
 play a whole run with the keyboard only and another with the mouse only, so the two

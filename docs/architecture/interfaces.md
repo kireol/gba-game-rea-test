@@ -441,7 +441,7 @@ drawMenu(...) drawHeader(...) drawFooter(...) drawCard(...) drawStat(...)  textP
 `INFINITE_LOCK_DELAY` is a very large finite number (≈2.7 min per landed piece),
 not `Infinity` — `Infinity` would leak into the digest and the serialised config.
 
-### `src/ui/scenes.ts` — the screen machine **[U `scenes-menus.test.ts` 18 + `scenes-options.test.ts` 26 + `scenes-run.test.ts` 27, over `scenes-harness.ts`; also E]**
+### `src/ui/scenes.ts` — the screen machine **[U `scenes-menus.test.ts` 18 + `scenes-options.test.ts` 26 + `scenes-run.test.ts` 30, over `scenes-harness.ts`; also E]**
 
 ```ts
 type SceneId = 'title' | 'modes' | 'rules' | 'play' | 'duel' | 'results'
@@ -491,6 +491,16 @@ screen would have made, which is how a test asks "what is on this screen".
   the end of the count are **discarded** rather than carried into the run — harmless
   for the app, which pumps one frame per animation tick, but a driver that batches
   frames must call `advance()` twice.
+* **One key can hold two roles, and the screen decides which.** `Enter` (PAUSE) is
+  CONFIRM outside a run, `Escape` (BACK) is PAUSE inside a live one, and `↑` (CURSOR
+  UP) is a **clockwise turn** inside a live run — so `←` `→` `↓` `↑` drive a run and
+  the same four keys drive every list. The role switch lives in `remap()`, not in the
+  bindings table: `↑` stays a CURSOR UP row there (and ROTATE CW / ROTATE CCW stay on
+  `X` / `Z`), and the in-run pause menu takes `↑` back the moment `menuActive()` is
+  true. Counter-clockwise keeps its own keys because `↓` is already the soft drop, so
+  the cursor cluster has no free key left. A remapped key's release edge never reaches
+  the session (`input.ts` releases on the bound intent, which `playInput` ignores) —
+  harmless, because rotation, pause and confirm are all press-only there.
 * Pause and resume are sound-events, not just status edges: pausing gives
   `menu-confirm`, Escape-resume gives `menu-back` **twice** (once from `back()`, once
   from `resume()`), and a duel Enter-resume gives `menu-confirm` then `menu-back`.

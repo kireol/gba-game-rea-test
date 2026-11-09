@@ -10,7 +10,7 @@
 | `npm run build:single` | `npm run build`, then `scripts/inline-single-file.mjs` → `dist/orbit-drop.html`, one self-contained page that opens from `file://` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` (strict; `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) |
-| `npm test` | Vitest — 23 unit files / 428 tests (node environment by default; `layout.test.ts` and `input.test.ts` opt into jsdom per file, and the three `scenes-*.test.ts` files need no DOM at all — they drive the screen machine through a stub `SceneHost`) |
+| `npm test` | Vitest — 23 unit files / 431 tests (node environment by default; `layout.test.ts` and `input.test.ts` opt into jsdom per file, and the three `scenes-*.test.ts` files need no DOM at all — they drive the screen machine through a stub `SceneHost`) |
 | `npm run test:watch` | Vitest watch mode |
 | `npm run test:e2e` | Playwright browser suite (needs `npx playwright install chromium` once) |
 | `npm run test:all` | unit suite then browser suite |
@@ -65,9 +65,9 @@ extension (`import { … } from '../engine/types.js'`), which is what
   `event.defaultPrevented`), `src/render/blocks.ts` (`src/tests/blocks.test.ts`,
   8 tests) and the scaling
   maths of `src/app/layout.ts` (`src/tests/layout.test.ts`, 14 tests, jsdom).
-* `src/ui/scenes.ts` has had unit tests of its own since 2026-11-08: 71 across
+* `src/ui/scenes.ts` has had unit tests of its own since 2026-11-08: 74 across
   `src/tests/scenes-menus.test.ts` (18), `scenes-options.test.ts` (26) and
-  `scenes-run.test.ts` (27), all three driven through one shared stub `SceneHost` in
+  `scenes-run.test.ts` (30), all three driven through one shared stub `SceneHost` in
   `src/tests/scenes-harness.ts`. No DOM and no clock: the screen machine's only door
   out is that host, so every sound, status edge, announcement and persistence write is
   assertable from the recorder, and `frame()` returns the draw calls the screen would

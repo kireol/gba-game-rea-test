@@ -7,6 +7,12 @@ each item names the file it concerns and how its absence is currently papered ov
 `npm run test:e2e` 7 tests green; `npm run build` green; `npm run report` PASS.
 Nothing below is "in progress" unless it says so.
 
+**Updated 2026-11-08 (latest): a controls change, not a coverage one — `↑` turns the
+piece clockwise inside a live run.** No item here moved. New baseline
+**23 files / 431 tests**, e2e 9 green, build green, sweep PASS. § 1's next item is
+still 6; an untracked `src/tests/audio-harness.ts` is sitting in the working tree,
+untouched by this change and deliberately not committed.
+
 **Updated 2026-11-08 (later that day): § 1 item 5 is done.** New baseline
 **23 files / 428 tests**, e2e 7 green, build green, sweep PASS over 99 files.
 **Next item in § 1: 6.** § 2 is done too, by the same file, and says so.
@@ -69,7 +75,7 @@ Order of work, cheapest-and-most-dangerous first:
    harness: `src/tests/scenes-harness.ts` (a recording `SceneHost` stub — no DOM, no
    clock, no storage), `scenes-menus.test.ts` (18: title / mode list / high scores /
    erase-confirmation), `scenes-options.test.ts` (26: options rows, sliders, the
-   bindings editor), `scenes-run.test.ts` (27: countdown, a live run, pause, results,
+   bindings editor), `scenes-run.test.ts` (30: countdown, a live run, pause, results,
    the versus screen). Every row this item asked for is pinned, including the
    countdown's 4 × 45 withheld frames and what `debug().status` reports on each screen
    (null everywhere there is no run; side A only in a duel). Nine things it found are

@@ -53,6 +53,10 @@ const duel = (): Harness => {
   return h;
 };
 
+/** The rotation of the piece drawn on field `index` (0 is player one). */
+const activeRot = (h: Harness, index = 0): number | null =>
+  h.scenes.frame().fields?.[index]?.active?.rot ?? null;
+
 describe('the countdown', () => {
   it('withholds the frames a run would have fallen', () => {
     const h = makeHarness();
@@ -122,6 +126,30 @@ describe('a live run', () => {
     expect(h.scenes.debug().pieces).toBeGreaterThan(0);
     expect(h.sfxNames).toContain('lock');
     expect(h.sfxNames).toContain('spawn');
+  });
+
+  it('turns the piece with the cursor-up key', () => {
+    const h = counted();
+    const spawn = activeRot(h);
+    expect(h.press('up')).toBe(true);
+    // Two runs on one seed, steered one way each. The cursor key has to produce
+    // the same quarter-turn as the bound rotation key, not merely "something".
+    const bound = counted();
+    bound.press('rotate-cw');
+    expect(activeRot(h)).toBe(activeRot(bound));
+    // …and the turn is real, so the comparison above is not two no-ops meeting.
+    expect(activeRot(h)).not.toBe(spawn);
+  });
+
+  it('hands the cursor-up key back to the pause list', () => {
+    const h = counted();
+    h.press('pause');
+    // Paused, `up` steps the list again. Wrapping off the top lands on MODE LIST,
+    // the only row here that leaves the screen, so the destination reports which
+    // role the key took.
+    h.press('up');
+    h.confirm();
+    expect(h.scenes.scene).toBe('modes');
   });
 
   it('takes the field as a hard drop', () => {
@@ -307,6 +335,14 @@ describe('the local versus screen', () => {
     }
     expect(h.count('SENT 0')).toBe(2);
     expect(h.text()).toContain(h.scenes.debug().seed.toString(16).toUpperCase().padStart(8, '0'));
+  });
+
+  it('turns player one with the cursor-up key, and only player one', () => {
+    const h = duel();
+    const before: (number | null)[] = [activeRot(h, 0), activeRot(h, 1)];
+    expect(h.press('up')).toBe(true);
+    expect(activeRot(h, 0)).not.toBe(before[0]);
+    expect(activeRot(h, 1)).toBe(before[1]);
   });
 
   it('counts down for both sides at once', () => {
