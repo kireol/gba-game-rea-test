@@ -105,3 +105,27 @@ contain the reference's wordmarks and are behaviour documentation only. Conseque
 for this repo: the RE docs must be readable without them, and
 `npm run report` is the guard that keeps the reference's names out of everything we
 author.
+
+## D11. The double-clickable page is a generated copy; the served build stays the deployment target
+
+`npm run build:single` emits `dist/orbit-drop.html` — the production bundle inlined
+as a module script — so the game is one file that opens from the filesystem with no
+server and nothing installed. It exists because the ordinary build *cannot* be
+opened that way: a `file://` document has the opaque `null` origin, and Chromium and
+Safari both refuse to fetch a module script against it, while an inline module script
+performs no fetch.
+
+Alternatives considered and rejected: `vite-plugin-singlefile` (a dependency and a
+plugin hook to do one tag replacement and two escapes, and it wants to apply to the
+served build as well); converting the 34 source modules to `.js` with JSDoc types so
+nothing needs building (that trades `tsc`'s strict pass for a runtime that still
+cannot load ES modules over `file://`, so it buys no double-click at all); a Deno
+static server that maps `.js` specifiers to `.ts` on request, for a no-build edit
+loop (works — the sources use erasable TS only — but it is a second toolchain over
+the same files, and Node does not leave the picture anyway: `tsc`, Vitest and
+Playwright are the gates).
+
+Cost: one build now emits two artifacts, and the single file carries no source map
+(`sourceMappingURL` is dropped because the map cannot travel inside the page).
+`tests/e2e/single-file.spec.ts` pins it, so it cannot quietly stop being
+self-contained.

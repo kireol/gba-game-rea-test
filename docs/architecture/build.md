@@ -7,6 +7,7 @@
 | `npm install` | dev dependencies only — the app has **no** runtime dependencies |
 | `npm run dev` | Vite dev server on 5173 (HMR; **not** what the browser suite uses) |
 | `npm run build` | `npm run typecheck` then `vite build` → `dist/` |
+| `npm run build:single` | `npm run build`, then `scripts/inline-single-file.mjs` → `dist/orbit-drop.html`, one self-contained page that opens from `file://` |
 | `npm run preview` | serve `dist/` |
 | `npm run typecheck` | `tsc --noEmit` (strict; `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) |
 | `npm test` | Vitest — 23 unit files / 428 tests (node environment by default; `layout.test.ts` and `input.test.ts` opt into jsdom per file, and the three `scenes-*.test.ts` files need no DOM at all — they drive the screen machine through a stub `SceneHost`) |
@@ -16,10 +17,12 @@
 | `npm run report` | `scripts/forbidden-name-sweep.mjs` — the licence gate; **exit 1 blocks a milestone** |
 
 The browser suite does **not** use the dev server: `playwright.config.ts` sets
-`webServer.commands = ['npm run build', 'npm run preview -- --port 4173 --strictPort']`
-and tests `http://127.0.0.1:4173/?test=1`, so what the tests exercise is the
-shipped production bundle. Two consequences worth knowing: an e2e run rebuilds
-(≈20 s), and a **typecheck error makes `npm run test:e2e` fail with a confusing
+`webServer.command = 'npm run build:single && npm run preview -- --port 4173 --strictPort'`,
+tests `http://127.0.0.1:4173/?test=1`, and `tests/e2e/single-file.spec.ts` loads
+the emitted `dist/orbit-drop.html` over `file://`, so what the tests exercise is
+the shipped production bundle and the shipped single file. Two consequences worth
+knowing: an e2e run rebuilds (≈20 s), and a **typecheck error makes
+`npm run test:e2e` fail with a confusing
 `Process from config.webServer... Exit code: 2`** instead of a compile message.
 
 `?test=1` is the only thing that publishes `window.__orbit`; without it the page
@@ -38,9 +41,9 @@ src/render     frame.ts renderer.ts palette.ts blocks.ts font5x7.ts   (all art g
 src/audio      engine.ts — synth, the 16 sfx and the four-chord loop  (all audio generated in code)
 src/ui         scenes.ts options.ts widgets.ts format.ts   (screen machine + shared widgets)
 src/tests      Vitest unit tests (one .test.ts per module; jsdom via a docblock)
-tests/e2e      Playwright spec (playable.spec.ts)
+tests/e2e      Playwright specs (playable.spec.ts, single-file.spec.ts)
 tools/re       reference-analysis harness (Python) — not part of the build
-scripts/       dev helpers + the licence sweep
+scripts/       dev helpers + the licence sweep + inline-single-file.mjs
 docs/          architecture/, reverse-engineering/, agent/, game-design.md, asset-provenance.md
 ```
 
@@ -90,7 +93,9 @@ extension (`import { … } from '../engine/types.js'`), which is what
 * e2e covers what unit tests structurally cannot: the page boots clean, the canvas
   paints, keyboard input moves a piece, mouse-only navigation reaches a playable
   field, wheel and right-click rotate, no page scroll on gameplay keys, a hidden
-  tab pauses a live run, and every visible string is ours.
+  tab pauses a live run, and every visible string is ours. `single-file.spec.ts`
+  adds what only a `file://` page can show: the game boots and plays from disk,
+  fetching nothing but itself.
 * New unit tests are added one file at a time and run **before** the next file is
   written, so a wrong assertion is caught while there is only one to suspect.
 
@@ -123,10 +128,45 @@ Nothing in `tools/` or `scripts/` is imported by the game; the build has no
 Python or emulator dependency, and the ROM is gitignored and never needed at
 runtime.
 
+## Single-file page (`dist/orbit-drop.html`)
+
+`npm run build:single` is `vite build` plus `scripts/inline-single-file.mjs`, which
+replaces the emitted `<script type="module" crossorigin src="./assets/index-*.js">`
+with the same bundle as an **inline** module script. The result is one ≈70 KB file
+that runs by being double-clicked: no server, no `npm install`, no request leaves
+the page.
+
+This is the only artifact a browser cannot open from disk by itself. `dist/index.html`
+on `file://` fails by design: a module script fetched by a `file://` document is
+fetched against the opaque `null` origin, which Chromium and Safari both refuse,
+while an inline module script performs no fetch at all. The multi-file build stays
+the deployment target (source map, cacheable bundle, what `npm run preview` and the
+served e2e tests use); the single file is the share-and-run copy. `dist/` is
+gitignored and `emptyOutDir` wipes it, so the file is regenerated on every
+`build:single`, never kept.
+
+What makes the step this small is the project's own shape: **no runtime
+dependencies**, no CSS asset (the page's stylesheet is already inline in
+`index.html`), no `import.meta.env`, no worker, no fetched asset — every byte is
+generated in code. So the inliner handles exactly one script tag, and *fails the
+build* (`exit 1`) instead of emitting a half-working page if it ever finds anything
+else: an unresolvable `src`, a hoisted stylesheet, a `modulepreload`, or a
+`</script` sequence it could not neutralise. `</script` and `<!--` inside the
+payload are rewritten to `<\/script` and `<\u0021--`, the escapes evaluating back to
+the original characters, which is what script data in HTML requires. The
+`sourceMappingURL` comment is dropped, because the map cannot travel inside the page.
+
+Node is needed to build this file and never to run it. `?test=1` works on `file://`
+as well (`window.location.search`), so the `file://` spec still reads
+`window.__orbit`.
+
 ## Release posture
 
 `npm run build && npm run preview` is the whole deployment: `dist/` is static, has
 no server component, and makes no network requests beyond the files Vite emits.
+Nothing in that chain needs Node either — `python3 -m http.server -d dist 8000`
+serves the same files — and `npm run build:single` collapses them into one page
+that needs no server at all.
 There is no CI configuration in this repository — the four gates
 (build+typecheck, unit, e2e, licence sweep) are run locally and their exit codes
 recorded in `docs/agent/PROJECT_STATE.md` before a milestone is claimed.

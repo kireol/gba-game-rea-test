@@ -54,6 +54,10 @@ only brief requirement known to be unmet).
   DASH / BLITZ / ENDLESS, two-player **DUEL**. No reference product, company,
   platform or mode names anywhere in project-authored text
   (`scripts/forbidden-name-sweep.mjs`, `npm run report`).
+* **Two artifacts from one command** (`docs/architecture/decisions.md` D11): `dist/`
+  is the served static site, `dist/orbit-drop.html` is the double-clickable single
+  file, also loaded over `file://` by the browser suite. Nothing in either needs
+  Node at run time; Node is build-time only.
 
 ## 3. Completed work (verified)
 
@@ -440,6 +444,35 @@ only brief requirement known to be unmet).
     `noUncheckedIndexedAccess` a bare `[x, y, w, h]` array hands callers
     `number | undefined` unless the tuple is named. Vitest stayed green through that last
     one — `npm test` does not typecheck (§ 5 item 7) — and `npx tsc --noEmit` caught it.
+* **Single-file build: `npm run build:single` → `dist/orbit-drop.html`**, added
+  2026-11-08 from the user's question "if I didn't want to run node, is there a way
+  to have this run in html?". What the survey found first: the game already needs
+  nothing at run time — `dependencies: {}`, no `import.meta.env`, no CSS/JSON/asset
+  import, no worker, every intra-project specifier already relative-with-`.js` — so
+  `dist/` runs under any static server (`python3 -m http.server -d dist 8000`,
+  verified 200/`text/javascript`). What it could not do is open from disk: Vite
+  emits `<script type="module" crossorigin src="./assets/index-*.js">`, and a
+  `file://` document has the opaque `null` origin, which Chromium and Safari refuse
+  as a module-script fetch. So `scripts/inline-single-file.mjs` replaces that one
+  tag with the same bundle as an **inline** module script (no fetch) and `exit 1`s
+  if it finds anything else outstanding. Node is now only a build-time tool.
+  Decision + rejected alternatives: `docs/architecture/decisions.md` D11.
+  * Verified: `npm run build:single` exit 0; artifact 69 KB, exactly 1 `<script`
+    pair, 0 external `src`/`href`, 0 `sourceMappingURL`. Gates re-run after the
+    change: `tsc --noEmit` 0, `npm test` 23 files / 428 tests, `npm run test:e2e`
+    **9 passed** (7 existing + 2 new `file://`), `npm run report` PASS.
+  * `tests/e2e/single-file.spec.ts` (2 tests) is what pins it. From `file://` with
+    `?test=1`: the page fetches nothing but itself, zero console/pageerror output,
+    one inline script and no `<link[href]>`, canvas still 240×160 and painting more
+    than one colour, `#boot-error` gone, and Enter moves title → modes. Its URL is
+    derived from `testInfo.file`, because `node:url` is unimportable here — no
+    `@types/node` is installed and `tsconfig.json` includes `tests`.
+  * Two traps, both recorded as comments in the code: a clean boot **removes**
+    `#boot-error` from the DOM, so its absence is the pass signal (the first draft
+    called `getComputedStyle(null)`); and `readonly debug(): Debug` inside an object
+    type is TS1024 — a `readonly` member has to be a property
+    (`readonly debug: () => Debug`). The typecheck-before-e2e coupling (§ 5 item 7)
+    caught the second one before any browser started.
 
 ## 4. In progress
 
@@ -1061,9 +1094,11 @@ what the renderer already does — worth reading before anyone re-derives them:
 | `src/app/loop.ts` | wall-clock → rules frames: `STEP_MS`, `MAX_CATCHUP`, the injectable clock/scheduler |
 | `src/render/frame.ts` | the frame model the renderer draws and the e2e tests assert against |
 | `tests/e2e/playable.spec.ts` | the 7 browser tests; reads the app through `?test=1`, never screenshots |
+| `tests/e2e/single-file.spec.ts` | the 2 `file://` tests: the single-file page boots, plays, and fetches nothing but itself |
+| `scripts/inline-single-file.mjs` | `npm run build:single`'s second half — folds the bundle into `dist/orbit-drop.html`; exit 1 on any leftover external reference |
 | `src/tests/layout.test.ts` | jsdom docblock example + the framebuffer scaling tests |
 | `src/tests/loop.test.ts` | the fixed-timestep loop, driven by an injected clock and a hand-pumped scheduler — no DOM, no waiting |
 | `src/app/input.ts` | browser events → intents: key mapping and capture, `SWALLOWED`, the `event.repeat` drop, pointer/wheel, focus |
 | `src/tests/bindings.test.ts` | the whole binding table: resolution order, conflicts, normalize/rebind/unbind |
 | `src/tests/input.test.ts` | jsdom: real events at the real listeners, pinning both the dispatched `Intent` and `defaultPrevented` |
-| `vite.config.ts` / `playwright.config.ts` | build (240×160 canvas app) / `webServer: npm run build` — hence the typecheck coupling |
+| `vite.config.ts` / `playwright.config.ts` | build (240×160 canvas app) / `webServer: npm run build:single && npm run preview` — hence the typecheck coupling, and why e2e exercises the single file too |

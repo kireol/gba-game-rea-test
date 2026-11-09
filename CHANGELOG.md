@@ -6,6 +6,35 @@ happened. No git tags exist yet, so versions below are milestones, not releases.
 
 ## [Unreleased] — 2026-11-08
 
+### Added — one file that opens by double-clicking
+`npm run build:single` now emits `dist/orbit-drop.html` next to the served build: the
+production bundle inlined as a module script, so the game is a single ≈70 KB file that
+needs no server, no `npm install`, and no request out to the network. Node is required
+to build it and never to run it.
+
+* It exists because the ordinary build **cannot** be opened from disk: a `file://`
+  document is the opaque `null` origin, and both Chromium and Safari refuse to fetch a
+  module script against it. An inline module script performs no fetch, which is the
+  whole mechanism. Everything else about the project made this cheap rather than
+  heroic — no runtime dependencies, no CSS asset, no `import.meta.env`, no worker, no
+  fetched asset — so `scripts/inline-single-file.mjs` handles exactly one script tag and
+  exits 1 rather than emitting a half-working page if it ever finds anything else.
+* `tests/e2e/single-file.spec.ts` (2 tests) loads that file over `file://` in real
+  Chromium and audits every request it makes: exactly one, for itself. Two traps showed
+  up while writing it — the `#boot-error` panel is *removed* on a clean boot, so a
+  `getComputedStyle` on it throws only in the passing case; and the e2e failure the
+  `file://` limitation produces is a console error, not a non-zero exit code, so a
+  green run without a console audit would have proved nothing.
+* The browser suite's `webServer` runs `build:single` rather than `build`, so the tested
+  artifact always matches sources. This adds ≈3 s per Playwright run.
+* Rejected instead: a bundler plugin for the same job (a dependency and a plugin hook,
+  and it wants to apply to the served build too); converting the 34 source modules to
+  `.js` with JSDoc types (loses `tsc`'s strict pass and still cannot load ES modules
+  over `file://`, so it buys no double-click at all); a Deno static server mapping `.js`
+  specifiers to `.ts` for a no-build edit loop — it works, the sources use erasable TS
+  only, but it is a second toolchain over the same files while `tsc`, Vitest and
+  Playwright keep needing Node anyway. See `docs/architecture/decisions.md` D11.
+
 ### Changed — documentation only
 No source, test or config file changed.
 

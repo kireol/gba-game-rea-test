@@ -33,7 +33,20 @@ npm run preview
 
 `dist/` contains one HTML file and one JS bundle, plus a source map, and nothing
 else — the page's stylesheet is inline in the HTML. There is nothing else to
-deploy, and no network request leaves the page.
+deploy, and no network request leaves the page. `dist/` also needs nothing at run
+time, so any static file server will do: `python3 -m http.server -d dist 8000`.
+
+Want one file to double-click or send to someone? Fold the bundle into the page:
+
+```bash
+npm run build:single   # emits dist/orbit-drop.html, then just open it
+```
+
+That single file (≈70 KB) is the whole game — no server, no install, no network.
+It exists because a browser refuses to run `dist/index.html` from disk: a module
+script fetched by a `file://` page belongs to the opaque `null` origin, which
+Chromium and Safari both block. An inline module script fetches nothing, so the
+page runs. Node is needed to *build* the file, never to run it.
 
 ### Tests
 
