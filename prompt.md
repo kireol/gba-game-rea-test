@@ -121,7 +121,7 @@ mGBA 0.10.5 is installed at `/Applications/mGBA.app`. You can drive the running 
 **How it connects**
 
 ```text
-Qwen Code --stdio--> mcp-mgba (node /Users/cparent/tools/mcp-mgba/dist/index.js, MGBA_PORT=8777)
+Qwen Code --stdio--> mcp-mgba (node $HOME/tools/mcp-mgba/dist/index.js, MGBA_PORT=8777)
           --TCP 127.0.0.1:8777--> bridge-8777.lua running inside mGBA
 ```
 

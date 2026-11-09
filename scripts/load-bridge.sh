@@ -9,7 +9,7 @@
 # Exits 0 once the bridge is listening on 127.0.0.1:$MGBA_PORT (default 8777).
 # (Port 8765, mcp-mgba's default, is used by homelab-kb on this machine.)
 set -euo pipefail
-BRIDGE="${MGBA_BRIDGE:-/Users/cparent/tools/mcp-mgba/lua/bridge-8777.lua}"
+BRIDGE="${MGBA_BRIDGE:-$HOME/tools/mcp-mgba/lua/bridge-8777.lua}"
 PORT="${MGBA_PORT:-8777}"
 
 listening() { lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | grep -q '^mGBA'; }

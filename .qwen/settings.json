@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "mgba": {
+      "command": "node",
+      "args": [
+        "$HOME/tools/mcp-mgba/dist/index.js"
+      ],
+      "trust": true,
+      "description": "mGBA emulator bridge (memory, input, screenshots, savestates)",
+      "env": {
+        "MGBA_PORT": "8777"
+      }
+    }
+  },
+  "$version": 4
+}

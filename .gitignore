@@ -1,17 +1,34 @@
+# Build / deps / caches
 node_modules/
 dist/
 dist-ssr/
+build/
+out/
 .vite/
 coverage/
 *.log
+
 # Playwright output
 test-results/
 playwright-report/
 .playwright-mcp/
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local config
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 *.local
 .trae/
+
 # never ship the reference ROM or its saves; keep them out of git
 rom/
 docs/reverse-engineering/states/
@@ -22,6 +39,11 @@ docs/reverse-engineering/screenshots/
 # python bytecode from the RE helper scripts
 __pycache__/
 *.pyc
+.venv/
+venv/
+.pytest_cache/
+.coverage
+tmp/
 
 # agent-local settings, worktrees and scratch state
 .qwen/

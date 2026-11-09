@@ -4,7 +4,7 @@
 # Set NO_BRIDGE=1 to skip loading the bridge.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-BRIDGE="${MGBA_BRIDGE:-/Users/cparent/tools/mcp-mgba/lua/bridge-8777.lua}"
+BRIDGE="${MGBA_BRIDGE:-$HOME/tools/mcp-mgba/lua/bridge-8777.lua}"
 QTINI="$HOME/.config/mgba/qt.ini"
 
 # The reference ROM is supplied locally and is never committed. Its file name is
